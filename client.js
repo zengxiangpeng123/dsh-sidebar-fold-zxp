@@ -461,10 +461,77 @@ window.__ModuleLoader__.load({
       const [labels, setLabels] = React.useState(() => entryLabels(ctx));
       const [error, setError] = React.useState('');
       const [name, setName] = React.useState('');
-      // Which row is being dragged. A ref as well, because dataTransfer is not
-      // readable during dragOver and some environments do not carry it at all.
-      const [dragging, setDragging] = React.useState(null);
-      const draggedRef = React.useRef(null);
+      /**
+       * The live drag: which entry, and where it would land.
+       *
+       * Plain pointer events rather than HTML5 drag-and-drop. `draggable` +
+       * `dataTransfer` looked correct here and did nothing in the desktop shell,
+       * and the same code is unreachable on a touch screen; pointer events are
+       * the one model that behaves the same everywhere.
+       */
+      const [drag, setDrag] = React.useState(null);
+
+
+      const ids = React.useMemo(() => [...labels.keys()], [labels]);
+      const send = React.useCallback(async op => {
+        const body = await request('/edit', { method: 'POST', body: JSON.stringify({ entryIds: ids, op }) });
+        if (body === null || !body.settings) {
+          setError(t('set.saveFailed'));
+          return;
+        }
+        setError('');
+        setSettings(body.settings);
+        if (body.plan) setPlan(body.plan);
+      }, [ids, t]);
+
+      const beginDrag = React.useCallback((event, row) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setDrag({ id: row.id, groupId: null, beforeId: null });
+
+        /** Read the drop target out of whatever is under the pointer. */
+        const targetAt = (x, y) => {
+          const under = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(x, y) : null;
+          const rowEl = under?.closest?.('[data-entry-id]');
+          if (rowEl !== null && rowEl !== undefined) {
+            const id = rowEl.getAttribute('data-entry-id');
+            const group = rowEl.getAttribute('data-entry-group');
+            if (id !== null && id !== row.id) {
+              return { groupId: group === '__ungrouped__' ? null : group, beforeId: id };
+            }
+          }
+          const groupEl = under?.closest?.('[data-group-drop]');
+          if (groupEl !== null && groupEl !== undefined) {
+            const group = groupEl.getAttribute('data-group-drop');
+            return { groupId: group === '__ungrouped__' ? null : group, beforeId: null };
+          }
+          return null;
+        };
+
+        const onMove = moveEvent => {
+          const target = targetAt(moveEvent.clientX, moveEvent.clientY);
+          setDrag(current => (current === null ? current : {
+            id: row.id,
+            groupId: target === null ? null : target.groupId,
+            beforeId: target === null ? null : target.beforeId,
+          }));
+        };
+
+        const onUp = upEvent => {
+          window.removeEventListener('pointermove', onMove, true);
+          window.removeEventListener('pointerup', onUp, true);
+          window.removeEventListener('pointercancel', onUp, true);
+          setDrag(null);
+          const target = targetAt(upEvent.clientX, upEvent.clientY);
+          if (target === null) return;
+          void send({ op: 'entry.place', entryId: row.id, groupId: target.groupId, beforeId: target.beforeId });
+        };
+
+        window.addEventListener('pointermove', onMove, true);
+        window.addEventListener('pointerup', onUp, true);
+        window.addEventListener('pointercancel', onUp, true);
+      }, [send]);
 
       React.useEffect(() => {
         let alive = true;
@@ -481,18 +548,6 @@ window.__ModuleLoader__.load({
         return () => { alive = false; };
       }, [ctx]);
 
-      const ids = React.useMemo(() => [...labels.keys()], [labels]);
-
-      const send = React.useCallback(async op => {
-        const body = await request('/edit', { method: 'POST', body: JSON.stringify({ entryIds: ids, op }) });
-        if (body === null || !body.settings) {
-          setError(t('set.saveFailed'));
-          return;
-        }
-        setError('');
-        setSettings(body.settings);
-        if (body.plan) setPlan(body.plan);
-      }, [ids, t]);
 
       if (settings === null) {
         return React.createElement('div', { className: 'dsh-fold-set' },
@@ -535,38 +590,26 @@ window.__ModuleLoader__.load({
       const entryRow = row => React.createElement('div', {
         className: 'dsh-fold-set-row dsh-fold-set-drag',
         key: row.id,
-        draggable: true,
-        'data-dragging': dragging === row.id ? 'true' : 'false',
-        'data-drop-target': dragging !== null && dragging !== row.id ? 'true' : 'false',
-        onDragStart: event => {
-          draggedRef.current = row.id;
-          setDragging(row.id);
-          try {
-            event.dataTransfer.setData('text/plain', row.id);
-            event.dataTransfer.effectAllowed = 'move';
-          } catch { /* some webviews expose a read-only dataTransfer */ }
-        },
-        onDragEnd: () => { draggedRef.current = null; setDragging(null); },
-        onDragOver: event => {
-          // Both are required: preventDefault opts in to dropping, and stopping
-          // the bubble keeps the group's own handler from also firing.
-          event.preventDefault();
-          event.stopPropagation();
-          try { event.dataTransfer.dropEffect = 'move'; } catch { /* ignore */ }
-        },
-        onDrop: event => {
-          event.preventDefault();
-          event.stopPropagation();
-          const id = draggedRef.current ?? (event.dataTransfer?.getData('text/plain') ?? '');
-          draggedRef.current = null;
-          setDragging(null);
-          if (id === '' || id === row.id) return;
-          // Dropping onto a row means "put it just before this one".
-          void send({ op: 'entry.place', entryId: id, groupId: row.groupId, beforeId: row.id });
-        },
+        // The drop target is read back out of these two attributes by
+        // elementFromPoint while dragging; they also make a row inert to the
+        // browser's own drag handling, which we do not use.
+        'data-entry-id': row.id,
+        'data-entry-group': row.groupId,
+        'data-dragging': drag !== null && drag.id === row.id ? 'true' : 'false',
+        'data-drop-target': drag !== null && drag.beforeId === row.id ? 'true' : 'false',
       },
-        React.createElement('span', { className: 'dsh-fold-set-grip', 'aria-hidden': 'true' }, '⠿'),
-        React.createElement('span', { className: 'dsh-fold-set-label', title: row.id }, labels.get(row.id) ?? row.id),
+        React.createElement('span', {
+          className: 'dsh-fold-set-grip',
+          'aria-hidden': 'true',
+          // Only the grip and the label start a drag: the select and the arrow
+          // buttons must keep behaving like the controls they are.
+          onPointerDown: event => beginDrag(event, row),
+        }, '⠿'),
+        React.createElement('span', {
+          className: 'dsh-fold-set-label',
+          title: row.id,
+          onPointerDown: event => beginDrag(event, row),
+        }, labels.get(row.id) ?? row.id),
         React.createElement('select', {
           className: 'dsh-fold-set-select',
           value: row.groupId === '__ungrouped__' ? '' : row.groupId,
@@ -585,25 +628,13 @@ window.__ModuleLoader__.load({
           onClick: () => { void send({ op: 'entry.move', entryId: row.id, delta: 1 }); },
         }, '↓'));
 
-      /** One group with its rows; the whole block accepts a drop. */
+      /** One group with its rows; the block itself is a drop target. */
       const groupBlock = group => React.createElement('div', {
         key: group.id,
         className: 'dsh-fold-set-group',
-        onDragOver: event => { event.preventDefault(); },
-        onDrop: event => {
-          event.preventDefault();
-          const id = draggedRef.current ?? (event.dataTransfer?.getData('text/plain') ?? '');
-          draggedRef.current = null;
-          setDragging(null);
-          if (id === '') return;
-          // Dropping on the group itself means "at the end of this group".
-          void send({
-            op: 'entry.place',
-            entryId: id,
-            groupId: group.implicit ? null : group.id,
-            beforeId: null,
-          });
-        },
+        'data-group-drop': group.implicit ? '__ungrouped__' : group.id,
+        'data-drop-group': drag !== null && drag.beforeId === null && drag.groupId !== null
+          && drag.groupId === (group.implicit ? '__ungrouped__' : group.id) ? 'true' : 'false',
       },
       React.createElement('div', { className: 'dsh-fold-set-grouphead' },
         React.createElement('span', { className: 'dsh-fold-set-groupname' },
@@ -768,8 +799,14 @@ window.__ModuleLoader__.load({
         .dsh-fold-set-grip {
           flex: 0 0 auto; cursor: grab; opacity: .3;
           font-size: 11px; user-select: none;
+          /* Stops the page scrolling while a drag is in progress, which is
+             what a touch screen would otherwise do instead. */
+          touch-action: none;
         }
-        .dsh-fold-set-drag:hover .dsh-fold-set-grip { opacity: .7; }
+        .dsh-fold-set-drag:active .dsh-fold-set-grip { cursor: grabbing; opacity: .9; }
+        .dsh-fold-set-group[data-drop-group="true"] {
+          background: var(--dsw-alias-fill-l2, rgba(76, 125, 255, .10));
+        }
       `;
       document.head.appendChild(style);
       return () => { style.remove(); };

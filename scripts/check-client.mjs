@@ -41,10 +41,12 @@ const checks = [
     (source.match(/name: 'settings\.section'/g) ?? []).length === 1],
   ['every settings edit goes through the host',
     /request\('\/edit'/.test(source) && !/planLayout|applyEdit/.test(source)],
-  ['dragging is only offered in the settings page', /draggable: true/.test(source) && !/draggable/.test(
+  ['dragging uses pointer events, not HTML5 drag-and-drop',
+    /onPointerDown:/.test(source) && !/onDragStart|onDrop:/.test(source)],
+  ['dragging is only offered in the settings page', !/onPointerDown:/.test(
     source.slice(0, source.indexOf('function SettingsPage')))],
   ['a drop reports its landing spot instead of computing it',
-    /op: 'entry\.place'/.test(source) && /beforeId: row\.id/.test(source) && /beforeId: null/.test(source)],
+    /op: 'entry\.place'/.test(source) && /beforeId/.test(source) && /elementFromPoint/.test(source)],
   ['reads and writes the fold flag', /localStorage\.getItem\(STORAGE_KEY\)/.test(source) && /localStorage\.setItem\(STORAGE_KEY/.test(source)],
   ['falls back to a plain fold when the host is unreachable', /plan === null \|\| folded/.test(source)],
   ['restores order and visibility on teardown',

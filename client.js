@@ -195,6 +195,11 @@ window.__ModuleLoader__.load({
           const el = rowById.get(entry.id);
           if (el === undefined) continue;
           el.style.order = String(entry.order);
+          // Indent a grouped row so the hierarchy reads at a glance: header, then
+          // the rows that belong to it. An ungrouped row keeps the full width, so
+          // "not in any group" still looks like the default state rather than a
+          // third level.
+          el.style.marginInlineStart = entry.ungrouped === true ? '' : '12px';
           // The panel the user is looking at stays visible even inside a
           // collapsed group, or they lose track of where they are.
           const hide = (folded || entry.hidden) && el !== kept;
@@ -212,7 +217,10 @@ window.__ModuleLoader__.load({
       // does its original job on a fresh install or when the host is unreachable.
       if (plan === null || folded) {
         const kept = activeRow(nav);
-        for (const el of rows) setShown(el, !(folded && el !== kept));
+        for (const el of rows) {
+          if (plan === null) el.style.marginInlineStart = '';
+          setShown(el, !(folded && el !== kept));
+        }
       }
     }
 
@@ -222,16 +230,34 @@ window.__ModuleLoader__.load({
       header.setAttribute('data-fold-header', group.id);
       header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       header.className = 'dsh-fold-header';
-      const chevron = document.createElement('span');
-      chevron.className = 'dsh-fold-header-chevron';
-      chevron.textContent = collapsed ? '▸' : '▾';
+
+      // A vector chevron rather than a text triangle: "▸" sits on the text
+      // baseline and changes width between fonts, which is exactly what made the
+      // first version feel crude next to the panel's own icons.
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 16 16');
+      svg.setAttribute('width', '12');
+      svg.setAttribute('height', '12');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', '1.9');
+      svg.setAttribute('stroke-linecap', 'round');
+      svg.setAttribute('stroke-linejoin', 'round');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.className = 'dsh-fold-header-chevron';
+      svg.style.transform = collapsed ? 'rotate(-90deg)' : 'none';
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      dot.setAttribute('d', 'M4 6.5 8 10.5 12 6.5');
+      svg.appendChild(dot);
+
       const name = document.createElement('span');
       name.className = 'dsh-fold-header-name';
       name.textContent = group.name;
       const count = document.createElement('span');
       count.className = 'dsh-fold-header-count';
       count.textContent = String(group.count);
-      header.append(chevron, name, count);
+
+      header.append(svg, name, count);
       // Capture phase: the shell's own row handler must never see this click.
       header.addEventListener('click', event => {
         event.preventDefault();
@@ -384,6 +410,7 @@ window.__ModuleLoader__.load({
           for (const el of panelRows(nav)) {
             setShown(el, true);
             el.style.order = '';
+            el.style.marginInlineStart = '';
           }
           nav.style.display = '';
           nav.style.flexDirection = '';
@@ -581,20 +608,40 @@ window.__ModuleLoader__.load({
 
         /* A section label, not a copy of a panel row: this is the shell's own
            idiom for grouping (see the 工作区 heading), and it cannot drift out of
-           step with the row metrics it does not pretend to share. */
+           step with row metrics it does not pretend to share.
+           The whole line is the hit target — a 12px triangle is a poor thing to
+           aim at, especially for anyone using a trackpad. */
         .dsh-fold-header {
           display: flex; align-items: center; gap: 6px;
           width: 100%; box-sizing: border-box;
-          padding: 10px 12px 4px;
-          border: 0; background: none; cursor: pointer;
-          font: inherit; font-size: 10.5px; line-height: 1.2;
-          letter-spacing: .02em; text-align: left;
-          color: inherit; opacity: .5;
+          margin: 8px 0 2px; padding: 5px 9px;
+          border: 0; border-radius: 7px; background: none; cursor: pointer;
+          font: inherit; font-size: 10.5px; line-height: 1.3;
+          letter-spacing: .03em; text-align: left;
+          color: inherit; opacity: .52;
+          transition: opacity 120ms ease, background-color 120ms ease;
         }
-        .dsh-fold-header:hover { opacity: .85; }
-        .dsh-fold-header-chevron { font-size: 9px; width: 8px; }
-        .dsh-fold-header-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .dsh-fold-header-count { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
+        .dsh-fold-header:hover {
+          opacity: .95;
+          background: var(--dsw-alias-fill-l2, rgba(128, 132, 140, .13));
+        }
+        .dsh-fold-header:focus-visible {
+          opacity: 1; outline: 2px solid var(--dsw-alias-border-l1, #4C7DFF); outline-offset: -2px;
+        }
+        .dsh-fold-header-chevron {
+          flex: 0 0 auto;
+          transition: transform 140ms ease;
+        }
+        .dsh-fold-header[aria-expanded="true"] .dsh-fold-header-chevron { transform: none; }
+        .dsh-fold-header[aria-expanded="false"] .dsh-fold-header-chevron { transform: rotate(-90deg); }
+        .dsh-fold-header-name {
+          flex: 1 1 auto; min-width: 0;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .dsh-fold-header-count {
+          flex: 0 0 auto;
+          font-variant-numeric: tabular-nums; opacity: .6;
+        }
 
         /* ── settings page ───────────────────────────────────────────────── */
         .dsh-fold-set { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }

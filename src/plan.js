@@ -102,6 +102,9 @@ export function planLayout({ settings, entryIds }) {
         id,
         order: index * GROUP_STEP + position * ROW_STEP,
         groupId: group.id,
+        // Carried explicitly so the browser knows whether to indent the row
+        // without comparing against a sentinel id it would have to hard-code.
+        ungrouped: implicit,
         hidden: group.collapsed,
       })
     })

@@ -54,6 +54,15 @@ test('折叠的组：组内行标记 hidden，其余不受影响', () => {
   assert.equal(plan.rows.find(r => r.id === 'market').hidden, false)
 })
 
+test('行自带 ungrouped 标记，浏览器据此决定要不要缩进', () => {
+  const plan = planLayout({
+    settings: settings({ groups: [{ id: 'dev', name: '开发', collapsed: false }], assignments: { board: 'dev' } }),
+    entryIds: ['board', 'market'],
+  })
+  assert.equal(plan.rows.find(r => r.id === 'board').ungrouped, false)
+  assert.equal(plan.rows.find(r => r.id === 'market').ungrouped, true)
+})
+
 test('已卸载的条目：进 missing，且不会留下空组', () => {
   const plan = planLayout({
     settings: settings({

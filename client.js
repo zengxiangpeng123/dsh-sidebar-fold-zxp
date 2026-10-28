@@ -219,12 +219,26 @@ window.__ModuleLoader__.load({
           nav.appendChild(header);
         }
       }
+      // Rows that match no entry are not ours to place — but they must not sit in
+      // the middle of the list either. The shipped 更多 affordance is one of
+      // these: sinking it to the bottom keeps it usable and out of the way, which
+      // is the whole of what this plugin should ever do to it.
+      const managed = new Set(rowById.values());
+      for (const el of rows) {
+        if (managed.has(el)) continue;
+        el.style.order = '999999';
+        el.style.marginInlineStart = '';
+        setShown(el, true);
+      }
 
       // Nothing configured yet: fall back to the plain fold, so the plugin still
       // does its original job on a fresh install or when the host is unreachable.
       if (plan === null || folded) {
         const kept = activeRow(nav);
         for (const el of rows) {
+          // Rows we do not manage keep their place even when the list folds: the
+          // instruction is to leave them alone apart from sinking them.
+          if (plan !== null && !managed.has(el)) continue;
           if (plan === null) el.style.marginInlineStart = '';
           setShown(el, !(folded && el !== kept));
         }

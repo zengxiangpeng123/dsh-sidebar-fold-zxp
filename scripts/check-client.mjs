@@ -49,6 +49,9 @@ const checks = [
     /op: 'entry\.place'/.test(source) && /beforeId/.test(source) && /elementFromPoint/.test(source)],
   ['reads and writes the fold flag', /localStorage\.getItem\(STORAGE_KEY\)/.test(source) && /localStorage\.setItem\(STORAGE_KEY/.test(source)],
   ['falls back to a plain fold when the host is unreachable', /plan === null \|\| folded/.test(source)],
+  ['sinks unmanaged rows instead of managing them',
+    /style\.order = '999999'/.test(source) && /managed\.has\(el\)\) continue/.test(source)],
+
   ['restores order and visibility on teardown',
     /for \(const el of panelRows\(nav\)\)[\s\S]{0,80}style\.order = ''/.test(source) && /self\.style\.order = ''/.test(source)],
 ]
@@ -64,3 +67,4 @@ if (failed > 0) {
   process.exit(1)
 }
 console.log('\nall structural checks passed')
+

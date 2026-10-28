@@ -325,6 +325,32 @@ window.__ModuleLoader__.load({
      * elements — moving a node is undone by its next render, while a CSS order
      * number is invisible to React and survives it.
      */
+    /** Labels this plugin always hides: the shell's own overflow affordance. */
+    const HIDE_LABELS = ['更多', 'More']
+    
+    /**
+     * Hide the overflow entry and push anything else we do not manage to the end.
+     *
+     * These children are not panel rows this plugin configures: 「更多」 is not even
+     * a `<button>` directly under the nav, which is why the earlier sink loop — it
+     * only walked `nav > button` — never saw it and it kept sitting at order 0, in
+     * the middle of the first group.
+     */
+    function settleUnmanaged(nav, managed, selfRow) {
+      for (const child of [...nav.children]) {
+        if (child.hasAttribute('data-fold-header')) continue
+        if (child === selfRow || managed.has(child)) continue
+        if (isOurs(child)) continue
+        const label = (child.getAttribute?.('aria-label') ?? child.textContent ?? '').trim().replace(/\s+/g, ' ')
+        if (HIDE_LABELS.includes(label)) {
+          if (child.style.display !== 'none') child.style.display = 'none'
+          child.setAttribute('aria-hidden', 'true')
+          continue
+        }
+        if (child.style.order !== '999999') child.style.order = '999999'
+      }
+    }
+    
     function applyPlan(nav, selfRow, folded, plan, byKey, onHeaderClick, overrides) {
       if (nav === null) return
 
@@ -389,6 +415,7 @@ window.__ModuleLoader__.load({
         el.style.boxShadow = ''
         setShown(el, true)
       }
+      settleUnmanaged(nav, managed, selfRow)
 
       // Nothing configured yet: fall back to the plain fold, so the plugin still
       // does its original job on a fresh install or when the host is unreachable.
@@ -422,7 +449,10 @@ window.__ModuleLoader__.load({
       svg.setAttribute('stroke-linecap', 'round')
       svg.setAttribute('stroke-linejoin', 'round')
       svg.setAttribute('aria-hidden', 'true')
-      svg.className = 'dsh-fold-header-chevron'
+      // `svg.className` is a read-only SVGAnimatedString: assigning a string there
+  // does nothing at all, so the rotation rule never matched and the chevron
+  // looked frozen.
+  svg.setAttribute('class', 'dsh-fold-header-chevron')
       const dot = document.createElementNS('http://www.w3.org/2000/svg', 'path')
       dot.setAttribute('d', 'M4 6.5 8 10.5 12 6.5')
       svg.appendChild(dot)
@@ -592,7 +622,18 @@ window.__ModuleLoader__.load({
           self.style.order = ''
           self.removeAttribute('data-fold-row')
         }
-        setObserved([])
+        // Give the overflow entry back when this plugin goes away.
+                const again = navOf(node)
+                if (again !== null) {
+                  for (const child of again.children) {
+                    if (child.getAttribute('aria-hidden') === 'true' && HIDE_LABELS.includes((child.textContent ?? '').trim())) {
+                      child.style.display = ''
+                      child.removeAttribute('aria-hidden')
+                    }
+                    if (child.style.order === '999999') child.style.order = ''
+                  }
+                }
+                setObserved([])
       }, [])
 
       return React.createElement('span', {
@@ -986,6 +1027,9 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
+
+
 
 
 

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Sidebar fold-zxp",
+    "description": "Folds the plugin entries in the left sidebar into a single row, giving the height back to workspaces and sessions. One click to unfold, one to fold, and the choice is remembered."
+  }
+}

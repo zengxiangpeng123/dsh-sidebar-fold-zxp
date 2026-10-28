@@ -1,0 +1,6 @@
+# This bundle inserts one row into the profile's Loader stack.
+# The plugin itself is client-only: the host half exists so the row resolves,
+# and does nothing at runtime.
+- insert:
+    - id: sidebar-fold-zxp
+      name: dsh-sidebar-fold-zxp

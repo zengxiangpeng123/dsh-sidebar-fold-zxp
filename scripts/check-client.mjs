@@ -53,6 +53,9 @@ const checks = [
     /style\.order = '999999'/.test(source) && /managed\.has\(el\)\) continue/.test(source)],
   ['restores order, indent and visibility on teardown',
     /el\.style\.order = ''/.test(source) && /el\.style\.marginInlineStart = ''/.test(source) && /setObserved\(\[\]\)/.test(source)],
+  ['pinned rows survive the fold', /folded && entry\.pinned !== true/.test(source)],
+  ['entries hidden by the user never show', /entry\.userHidden === true/.test(source)],
+  ['groups whose entries are all hidden keep no header', /group\.allHidden === true/.test(source)],
 ]
 
 let failed = 0
@@ -66,5 +69,6 @@ if (failed > 0) {
   process.exit(1)
 }
 console.log('\nall structural checks passed')
+
 
 

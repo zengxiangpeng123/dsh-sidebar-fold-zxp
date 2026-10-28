@@ -388,7 +388,13 @@ window.__ModuleLoader__.load({
           setGrouped(el, entry.ungrouped === true)
           // The panel the user is looking at stays visible even inside a collapsed
           // group, or they lose track of where they are.
-          const hide = (folded || collapsedById.get(entry.groupId) === true) && el !== kept
+          // Three independent reasons to hide one row: the user hid it, the whole block
+  // is folded and this row did not opt out, or its group is collapsed. With
+  // nothing pinned and nothing hidden this reduces to the original expression.
+  const hide = (
+    entry.userHidden === true
+    || ((folded && entry.pinned !== true) || collapsedById.get(entry.groupId) === true)
+  ) && el !== kept
           setShown(el, !hide)
         }
         // Folded means the whole area is closed: the headers go with it, exactly
@@ -397,6 +403,8 @@ window.__ModuleLoader__.load({
         if (!folded) {
           for (const group of plan.groups) {
             if (group.implicit) continue
+                        // A group whose entries are all switched off has nothing to head.
+                        if (group.allHidden === true) continue
             const header = makeHeader(group, collapsedById.get(group.id) === true, onHeaderClick)
             header.style.order = String(group.order)
             nav.appendChild(header)
@@ -1027,6 +1035,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 

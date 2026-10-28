@@ -23,6 +23,12 @@ export const DEFAULT_SETTINGS = Object.freeze({
   groups: [],
   order: [],
   assignments: {},
+  // Entries the user pinned (stay visible while folded) or hid outright. Both
+  // empty by default, which is what keeps the pre-existing behaviour intact:
+  // with nothing pinned and nothing hidden the fold expression reduces to what
+  // it was before these fields existed.
+  pinned: [],
+  hidden: [],
 })
 
 const MAX_GROUPS = 40
@@ -73,7 +79,37 @@ export function sanitizeSettings(raw) {
     }
   }
 
-  const order = []
+  /** A de-duplicated list of non-empty strings, capped. */
+
+  function stringList(value, max) {
+
+    const out = []
+
+    const seen = new Set()
+
+    if (!Array.isArray(value)) return out
+
+    for (const entry of value) {
+
+      if (out.length >= max) break
+
+      const id = asString(entry).trim()
+
+      if (id === '' || seen.has(id)) continue
+
+      seen.add(id)
+
+      out.push(id)
+
+    }
+
+    return out
+
+  }
+
+  
+
+    const order = []
   const seenOrder = new Set()
   if (Array.isArray(input.order)) {
     for (const entry of input.order) {
@@ -97,7 +133,13 @@ export function sanitizeSettings(raw) {
     }
   }
 
-  return { version: SETTINGS_VERSION, groups, order, assignments }
+  const hidden = stringList(input.hidden, MAX_ORDER)
+  // The same key in both lists is a contradiction; hiding wins because it is the
+  // more explicit of the two, and the alternative is a row that is "always
+  // hidden" and "always visible while folded" at once.
+  const pinned = stringList(input.pinned, MAX_ORDER).filter(id => !hidden.includes(id))
+
+  return { version: SETTINGS_VERSION, groups, order, assignments, pinned, hidden }
 }
 
 /**
@@ -130,3 +172,5 @@ export async function saveSettings(file, settings) {
   await rename(temporary, file)
   return clean
 }
+
+

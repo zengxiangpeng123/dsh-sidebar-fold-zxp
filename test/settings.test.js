@@ -64,7 +64,7 @@ test('assignments：指向不存在的组就丢掉，不留幽灵引用', () => 
 
 test('缺省字段自动补齐，多余字段被丢掉', () => {
   const out = sanitizeSettings({ groups: [{ id: 'a', name: 'A', extra: 1 }], surprise: 'x' })
-  assert.deepEqual(Object.keys(out).sort(), ['assignments', 'groups', 'order', 'version'])
+  assert.deepEqual(Object.keys(out).sort(), ['assignments', 'groups', 'hidden', 'order', 'pinned', 'version'])
   assert.deepEqual(Object.keys(out.groups[0]).sort(), ['collapsed', 'id', 'name'])
 })
 
@@ -111,3 +111,30 @@ test('保存会顺手清洗：写入磁盘的永远是合法配置', async () =>
   assert.deepEqual(disk.order, ['a'])
   assert.deepEqual(disk.assignments, {})
 })
+
+// ── 选择性折叠：新增 pinned / hidden ──────────────────────────────────────
+
+test('旧配置没有 pinned/hidden 时补空数组，其余字段原样保留', () => {
+  const out = sanitizeSettings({
+    groups: [{ id: 'dev', name: '开发', collapsed: true }],
+    order: ['a'],
+    assignments: { a: 'dev' },
+  })
+  assert.deepEqual(out.pinned, [])
+  assert.deepEqual(out.hidden, [])
+  assert.deepEqual(out.groups, [{ id: 'dev', name: '开发', collapsed: true }])
+  assert.deepEqual(out.order, ['a'])
+  assert.deepEqual(out.assignments, { a: 'dev' })
+})
+
+test('pinned/hidden：去空、去重、非字符串丢弃', () => {
+  assert.deepEqual(sanitizeSettings({ pinned: ['a', 'a', '', 3, null] }).pinned, ['a'])
+  assert.deepEqual(sanitizeSettings({ hidden: ['b', 'b', ' '] }).hidden, ['b'])
+})
+
+test('pinned 与 hidden 同时包含同一 key 时，hidden 胜出', () => {
+  const out = sanitizeSettings({ pinned: ['x'], hidden: ['x'] })
+  assert.deepEqual(out.pinned, [])
+  assert.deepEqual(out.hidden, ['x'])
+})
+

@@ -1,6 +1,6 @@
 {
   "name": "dsh-sidebar-fold-zxp",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "把 DSH 左侧那排插件入口折成一行「插件列表」，把高度还给工作区与会话列表。Fold the sidebar's plugin entries into a single row.",
   "type": "module",
   "main": "./index.js",

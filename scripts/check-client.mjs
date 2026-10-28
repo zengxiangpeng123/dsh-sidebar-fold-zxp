@@ -2,14 +2,21 @@
 /**
  * Structural checks for the browser half.
  *
- * client.js cannot be imported by Node, so the invariants that matter are checked
- * as source rules. Each one exists because breaking it fails silently: the code
- * still runs and the sidebar just stops doing the right thing.
+ * `client.js` cannot be imported by Node (the page's module loader delivers it),
+ * so the invariants that actually matter are checked as source rules instead.
+ * Each one exists because breaking it fails *silently* — the code still runs,
+ * the sidebar just quietly stops doing what it should:
  *
- * This version is one stylesheet and no round trips, after every network- and
- * registry-based design failed in the desktop shell without a visible error.
- * These checks encode that decision, so a later improvement cannot quietly
- * reintroduce the fragile parts.
+ *   1. hiding must go through an inline style. The row's class already sets
+ *      `display: flex`, which beats the user-agent `[hidden]` rule;
+ *   2. the toggle click must be stopped in the capture phase, or the shell's own
+ *      row handler selects a panel that does not exist;
+ *   3. ordering must be a CSS `order` number. Moving a node is undone by the
+ *      shell's next render and can throw;
+ *   4. the ordering rules must not be re-implemented here — the host's tested
+ *      planner is the only place they live;
+ *   5. nothing may address the shell's DOM through a global selector or a
+ *      hashed class name.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -19,36 +26,39 @@ const here = dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(join(here, '..', 'client.js'), 'utf8')
 
 const checks = [
-  ['hides with a CSS rule, which React cannot undo',
-    /display: none !important/.test(source) && /buildCss/.test(source)],
-  ['does not set the hidden property on a row', !/\.hidden\s*=\s*(true|false)/.test(source)],
-  ['orders rows with CSS order, not by moving nodes',
-    /order: \$\{index\}/.test(source) && !/appendChild\((row|el)\)/.test(source)],
-  ['makes no network calls at all', !/\bfetch\s*\(/.test(source) && !/\/api\//.test(source)],
-  ['does not read the slot registry (absent in the desktop shell)',
-    !/entriesOfSlot|entriesOf\b/.test(source)],
-  ['uses neither HTML5 drag nor pointer drag', !/draggable|dataTransfer|onPointerDown/.test(source)],
-  ['stops the toggle click in the capture phase',
-    /addEventListener\('click', onClick, true\)/.test(source) && /event\.stopPropagation\(\)/.test(source)],
-  ['anchors on our own node, not a global query',
-    /closest\('nav'\)/.test(source) && !/document\.querySelector\(/.test(source)],
-  ['quotes attribute selector values so a label cannot break out',
-    /JSON\.stringify\(key\)/.test(source)],
-  ['folds with an attribute rule on the document element',
-    /data-fold-collapsed/.test(source) && /html\[/.test(source)],
-  ['hides the overflow row by a fixed rule',
-    /ALWAYS_HIDDEN/.test(source) && /ALWAYS_HIDDEN\.includes/.test(source)],
-  ['keeps the configuration in this page', /localStorage\.setItem\(CONFIG_KEY/.test(source)],
-  ['registers exactly one sidebar row', (source.match(/name: 'sidebar\.panellist'/g) ?? []).length === 1],
-  ['registers exactly one settings page', (source.match(/name: 'settings\.section'/g) ?? []).length === 1],
-  ['removes its stylesheet and attribute on teardown',
-    /getElementById\(STYLE_ID\)\?\.remove\(\)/.test(source) && /removeAttribute\?\.\(FOLD_ATTR\)/.test(source)],
+  ['hides through an inline display, never the hidden attribute',
+    /const want = shown \? '' : 'none'/.test(source) && /style\.display\s*=\s*want/.test(source)],
+  ['does not set the hidden property', !/\.hidden\s*=\s*(true|false)/.test(source)],
+  ['stops the click in the capture phase', /addEventListener\('click',\s*onClick,\s*true\)/.test(source)],
+  ['stops propagation before the shell reacts', /event\.stopPropagation\(\)/.test(source)],
+  ['orders rows with CSS order, not by moving nodes', /style\.order\s*=/.test(source) && !/appendChild\((row|el)\)/.test(source)],
+  ['anchors on our own node, not a global selector',
+    /closest\('nav'\)/.test(source) && !/document\.querySelector/.test(source)],
+  ['does not re-implement the ordering rules', !/GROUP_STEP|planLayout|ROW_STEP/.test(source)],
+  ['registers exactly one sidebar row',
+    (source.match(/name: 'sidebar\.panellist'/g) ?? []).length === 1],
+  ['registers exactly one settings page',
+    (source.match(/name: 'settings\.section'/g) ?? []).length === 1],
+  ['every settings edit goes through the host',
+    /request\('\/edit'/.test(source) && !/planLayout|applyEdit/.test(source)],
+  ['dragging uses pointer events, not HTML5 drag-and-drop',
+    /onPointerDown:/.test(source) && !/onDragStart|onDrop:/.test(source)],
+  ['dragging is only offered in the settings page', !/onPointerDown:/.test(
+    source.slice(0, source.indexOf('function SettingsPage')))],
+  ['a drop reports its landing spot instead of computing it',
+    /op: 'entry\.place'/.test(source) && /beforeId/.test(source) && /elementFromPoint/.test(source)],
+  ['reads and writes the fold flag', /localStorage\.getItem\(STORAGE_KEY\)/.test(source) && /localStorage\.setItem\(STORAGE_KEY/.test(source)],
+  ['falls back to a plain fold when the host is unreachable', /plan === null \|\| folded/.test(source)],
+  ['sinks unmanaged rows instead of managing them',
+    /style\.order = '999999'/.test(source) && /managed\.has\(el\)\) continue/.test(source)],
+  ['restores order, indent and visibility on teardown',
+    /el\.style\.order = ''/.test(source) && /el\.style\.marginInlineStart = ''/.test(source) && /setObserved\(\[\]\)/.test(source)],
 ]
 
 let failed = 0
 for (const [name, ok] of checks) {
   if (!ok) failed += 1
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`)
+  console.log(`${ok ? '✔' : '✘'} ${name}`)
 }
 
 if (failed > 0) {
@@ -56,3 +66,5 @@ if (failed > 0) {
   process.exit(1)
 }
 console.log('\nall structural checks passed')
+
+

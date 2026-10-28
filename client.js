@@ -7,8 +7,11 @@ window.__ModuleLoader__.load({
     const STYLE_ID = 'dsh-sidebar-fold-style';
 
     const DICT = {
-      zh: { row: '插件', hint: '展开 / 收起插件入口' },
-      en: { row: 'Plugins', hint: 'Fold or unfold the plugin entries' },
+      // Not "插件": the sidebar already has a shipped row with exactly that
+      // name, and two rows called the same thing next to each other read as a
+      // bug. This row lists the entries, so it is named for what it holds.
+      zh: { row: '插件列表', hint: '展开 / 收起插件入口' },
+      en: { row: 'Plugin list', hint: 'Fold or unfold the plugin entries' },
     };
 
     /**

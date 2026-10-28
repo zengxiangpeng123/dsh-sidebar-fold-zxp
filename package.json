@@ -1,7 +1,7 @@
 {
   "name": "dsh-sidebar-fold-zxp",
   "version": "0.1.0",
-  "description": "Fold the plugin entries in the DSH sidebar into a single row, so workspaces and sessions get the height back.",
+  "description": "把 DSH 左侧那排插件入口折成一行「插件列表」，把高度还给工作区与会话列表。Fold the sidebar's plugin entries into a single row.",
   "type": "module",
   "main": "./index.js",
   "exports": {
@@ -13,11 +13,24 @@
   "files": [
     "index.js",
     "client.js",
+    "scripts",
     "locale",
     "icon.svg",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zengxiangpeng123/dsh-sidebar-fold-zxp.git"
+  },
+  "homepage": "https://github.com/zengxiangpeng123/dsh-sidebar-fold-zxp#readme",
+  "bugs": {
+    "url": "https://github.com/zengxiangpeng123/dsh-sidebar-fold-zxp/issues"
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.1"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

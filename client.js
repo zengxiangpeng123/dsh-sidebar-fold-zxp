@@ -314,16 +314,12 @@ window.__ModuleLoader__.load({
       const settingsRef = React.useRef(null);
 
       /** Panel entry ids, in the shell's order, from the slot registry itself. */
+      /** Panel entry ids, in the shell's order, from the slot registry itself. */
       const entryIds = React.useCallback(() => {
-        try {
-          const entries = ctx.slots.entriesOfSlot('sidebar.panellist');
-          return entries
-            .map(entry => entry?.options?.id)
-            // Our own row is not configurable: it is the control, not an entry.
-            .filter(id => typeof id === 'string' && id !== '' && id !== 'sidebar-fold');
-        } catch {
-          return [];
-        }
+        return registryEntries(ctx)
+          .map(options => options.id)
+          // Our own row is not configurable: it is the control, not an entry.
+          .filter(id => typeof id === 'string' && id !== '' && id !== 'sidebar-fold');
       }, [ctx]);
 
       /** Map a plan id to the DOM row it refers to: same order, minus our own. */
@@ -463,21 +459,39 @@ window.__ModuleLoader__.load({
     }
 
     /** Panel entries as { id → display label }, excluding this plugin's own row. */
+    /**
+     * The slot registry's own list of entries, whatever the client exposes.
+     *
+     * The shipped sidebar uses `entriesOfSlot`; other builds name it `entries`,
+     * and the item shape differs too (`{options}` vs a flat `{id,label}`). The
+     * first version assumed one shape, and in the desktop app it returned
+     * nothing — which read as "no entries", so no group ever rendered there. All
+     * of them are tried, in order, and each item is flattened.
+     */
+    function registryEntries(ctx) {
+      const api = ctx?.slots;
+      for (const name of ['entriesOfSlot', 'entries', 'entriesOf']) {
+        try {
+          const fn = api?.[name];
+          if (typeof fn !== 'function') continue;
+          const raw = fn.call(api, 'sidebar.panellist');
+          if (Array.isArray(raw)) return raw.map(item => item?.options ?? item ?? {});
+        } catch { /* try the next shape */ }
+      }
+      return [];
+    }
+    /** Panel entries as { id → display label }, excluding this plugin's own row. */
     function entryLabels(ctx) {
       const map = new Map();
-      try {
-        const entries = ctx.slots.entriesOfSlot('sidebar.panellist');
-        for (const entry of entries) {
-          const options = entry?.options ?? {};
-          const id = options.id;
-          if (typeof id !== 'string' || id === '' || id === 'sidebar-fold') continue;
-          let label = options.label;
-          if (typeof label === 'function') {
-            try { label = label(); } catch { label = id; }
-          }
-          map.set(id, typeof label === 'string' && label !== '' ? label : id);
+      for (const options of registryEntries(ctx)) {
+        const id = options.id;
+        if (typeof id !== 'string' || id === '' || id === 'sidebar-fold') continue;
+        let label = options.label;
+        if (typeof label === 'function') {
+          try { label = label(); } catch { label = id; }
         }
-      } catch { /* no registry: the page renders empty rather than failing */ }
+        map.set(id, typeof label === 'string' && label !== '' ? label : id);
+      }
       return map;
     }
 
@@ -503,6 +517,12 @@ window.__ModuleLoader__.load({
        * the one model that behaves the same everywhere.
        */
       const [drag, setDrag] = React.useState(null);
+      /**
+       * What the last attempt actually saw. The settings page is the only place the
+       * user can look when the sidebar does nothing, so the counts live there
+       * rather than in a console they would have to open.
+       */
+      const [diag, setDiag] = React.useState('');
 
 
       const ids = React.useMemo(() => [...labels.keys()], [labels]);
@@ -575,6 +595,7 @@ window.__ModuleLoader__.load({
           const layout = await loadPlan(ids);
           if (!alive) return;
           setLabels(found);
+          setDiag(`entries ${ids.length} · rows ${layout === null ? '—' : layout.rows.length} · groups ${layout === null ? '—' : layout.groups.length} · settings ${loaded === null ? 'unreachable' : 'ok'}`);
           setSettings(loaded);
           setPlan(layout);
         })();
@@ -678,6 +699,7 @@ window.__ModuleLoader__.load({
       return React.createElement('div', { className: 'dsh-fold-set' },
         error === '' ? null : React.createElement('div', { className: 'dsh-fold-set-error' }, error),
         React.createElement('div', { className: 'dsh-fold-set-hint' }, t('set.intro')),
+        diag === '' ? null : React.createElement('div', { className: 'dsh-fold-set-diag' }, diag),
 
         React.createElement('div', { className: 'dsh-fold-set-legend' }, t('set.groups')),
         groups.length === 0
@@ -777,6 +799,10 @@ window.__ModuleLoader__.load({
           opacity: .55; letter-spacing: .02em;
         }
         .dsh-fold-set-hint { font-size: 10.5px; opacity: .45; line-height: 1.5; }
+        .dsh-fold-set-diag {
+          font-size: 10px; opacity: .4; font-variant-numeric: tabular-nums;
+          font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        }
         .dsh-fold-set-error { font-size: 11px; color: #D92D33; }
         .dsh-fold-set-row {
           display: flex; align-items: center; gap: 6px;
@@ -875,3 +901,6 @@ window.__ModuleLoader__.load({
     };
   },
 });
+
+
+

@@ -174,162 +174,6 @@ window.__ModuleLoader__.load({
 
     
 
-    /**
-
-    
-
-     * Entries the user switched off, kept in this page.
-
-    
-
-     *
-
-    
-
-     * Local-first for the same reason the collapse overrides are: a write that does
-
-    
-
-     * not reach the host must not make a checkbox appear dead. Both surfaces subscribe
-
-    
-
-     * to this list, so ticking a box updates the sidebar and the page together.
-
-    
-
-     */
-
-    
-
-    const HIDDEN_KEY = 'dsh-sidebar-fold:hidden'
-
-    
-
-    let hiddenKeys = readHidden()
-
-    
-
-    const hiddenListeners = new Set()
-
-    
-
-    
-
-    
-
-    function readHidden() {
-
-    
-
-      try {
-
-    
-
-        const raw = window.localStorage.getItem(HIDDEN_KEY)
-
-    
-
-        if (raw === null) return []
-
-    
-
-        const parsed = JSON.parse(raw)
-
-    
-
-        return Array.isArray(parsed) ? parsed.filter(key => typeof key === 'string') : []
-
-    
-
-      } catch {
-
-    
-
-        return []
-
-    
-
-      }
-
-    
-
-    }
-
-    
-
-    
-
-    
-
-    function setHiddenKeys(next) {
-
-    
-
-      hiddenKeys = [...new Set(next.filter(key => typeof key === 'string'))]
-
-    
-
-      try { window.localStorage.setItem(HIDDEN_KEY, JSON.stringify(hiddenKeys)) } catch { /* private mode */ }
-
-    
-
-      for (const listener of hiddenListeners) listener()
-
-    
-
-    }
-
-    
-
-    
-
-    
-
-    function useHiddenKeys() {
-
-    
-
-      const [keys, setKeys] = React.useState(hiddenKeys)
-
-    
-
-      React.useEffect(() => {
-
-    
-
-        const listener = () => setKeys(hiddenKeys)
-
-    
-
-        hiddenListeners.add(listener)
-
-    
-
-        listener()
-
-    
-
-        return () => { hiddenListeners.delete(listener) }
-
-    
-
-      }, [])
-
-    
-
-      return keys
-
-    
-
-    }
-
-    
-
-    
-
-    
-
     function readFolded() {
       try {
         const raw = window.localStorage.getItem(STORAGE_KEY)
@@ -507,7 +351,7 @@ window.__ModuleLoader__.load({
       }
     }
     
-    function applyPlan(nav, selfRow, folded, plan, byKey, onHeaderClick, overrides, hiddenSet) {
+    function applyPlan(nav, selfRow, folded, plan, byKey, onHeaderClick, overrides) {
       if (nav === null) return
 
       nav.style.display = 'flex'
@@ -544,11 +388,7 @@ window.__ModuleLoader__.load({
           setGrouped(el, entry.ungrouped === true)
           // The panel the user is looking at stays visible even inside a collapsed
           // group, or they lose track of where they are.
-          // An entry switched off in Settings disappears outright — that is the
-          // whole point of the switch, so it does not get the "keep the active
-          // panel visible" exemption the fold gives.
-          const hiddenByUser = hiddenSet.has(entry.id)
-          const hide = hiddenByUser || ((folded || collapsedById.get(entry.groupId) === true) && el !== kept)
+          const hide = (folded || collapsedById.get(entry.groupId) === true) && el !== kept
           setShown(el, !hide)
         }
         // Folded means the whole area is closed: the headers go with it, exactly
@@ -557,8 +397,6 @@ window.__ModuleLoader__.load({
         if (!folded) {
           for (const group of plan.groups) {
             if (group.implicit) continue
-            const members = plan.rows.filter(row => row.groupId === group.id)
-            if (members.length > 0 && members.every(row => hiddenSet.has(row.id))) continue
             const header = makeHeader(group, collapsedById.get(group.id) === true, onHeaderClick)
             header.style.order = String(group.order)
             nav.appendChild(header)
@@ -664,9 +502,6 @@ window.__ModuleLoader__.load({
       const [collapsed, setCollapsed] = React.useState(readCollapsedOverrides)
       const collapsedRef = React.useRef(collapsed)
       collapsedRef.current = collapsed
-      const hidden = useHiddenKeys()
-      const hiddenRef = React.useRef(hidden)
-      hiddenRef.current = hidden
 
       /** Re-ask the host for a layout matching the rows that exist right now. */
       const refresh = React.useCallback(async () => {
@@ -742,7 +577,7 @@ window.__ModuleLoader__.load({
         const { byKey } = collectRows(nav, selfRow)
         const keys = [...byKey.keys()]
         setObserved(keys)
-        applyPlan(nav, selfRow, folded, planRef.current, byKey, group => { toggleGroup(group) }, collapsedRef.current, hiddenRef.current)
+        applyPlan(nav, selfRow, folded, planRef.current, byKey, group => { toggleGroup(group) }, collapsedRef.current)
 
         // A plan computed for a different set of rows is stale — entries were
         // installed, removed or renamed. Ask again rather than paint the wrong
@@ -765,7 +600,7 @@ window.__ModuleLoader__.load({
         })
         observer.observe(nav, { childList: true, attributes: true, attributeFilter: ['aria-current'] })
         return () => observer.disconnect()
-      }, [folded, plan, refresh, toggleGroup, collapsed, hidden])
+      }, [folded, plan, refresh, toggleGroup, collapsed])
 
       // Hand the sidebar back untouched when this plugin goes away.
       React.useEffect(() => () => {
@@ -818,7 +653,6 @@ window.__ModuleLoader__.load({
      */
     function SettingsPage({ t }) {
       const keys = useObservedKeys()
-      const hiddenNow = new Set(useHiddenKeys())
       const [settings, setSettings] = React.useState(null)
       const [plan, setPlan] = React.useState(null)
       const [error, setError] = React.useState('')
@@ -952,20 +786,8 @@ window.__ModuleLoader__.load({
         'data-dragging': drag !== null && drag.id === row.id ? 'true' : 'false',
         'data-drop-target': drag !== null && drag.beforeId === row.id ? 'true' : 'false',
       },
-        React.createElement('label', { className: 'dsh-fold-set-check', title: '显示 / 隐藏' },
-                  React.createElement('input', {
-                    type: 'checkbox',
-                    checked: !hiddenNow.has(row.id),
-                    onChange: event => {
-                      const next = new Set(hiddenNow)
-                      if (event.target.checked) next.delete(row.id)
-                      else next.add(row.id)
-                      setHiddenKeys([...next])
-                    },
-                  }),
-                  '显示'),
-                React.createElement('span', {
-                  className: 'dsh-fold-set-grip',
+        React.createElement('span', {
+          className: 'dsh-fold-set-grip',
           'aria-hidden': 'true',
           // Only the grip and the label start a drag: the select and the arrow
           // buttons must keep behaving like the controls they are.
@@ -1205,11 +1027,6 @@ window.__ModuleLoader__.load({
     }
   },
 })
-
-
-
-
-
 
 
 

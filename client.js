@@ -210,8 +210,12 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
           name: 'sidebar.panellist',
           id: 'sidebar-fold',
-          // First: the toggle should sit above the entries it folds.
-          order: -1,
+          // First among every entry, not merely first among the shipped ones.
+          // Plugins pick their own order and the useful ones land near the top
+          // (the workbench registers -4), so a modest -1 leaves the toggle
+          // sitting *below* rows it is supposed to fold — the group then reads
+          // as if the entry above it were not part of the list.
+          order: -1000,
           label: () => t('row'),
         }, props => React.createElement(FoldRow, { ...props, t })));
 

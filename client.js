@@ -95,8 +95,15 @@ window.__ModuleLoader__.load({
 
     /** Ask the host to turn its configuration into an order/hide list. */
     async function loadPlan(entryIds) {
-      const body = await request('/plan', { method: 'POST', body: JSON.stringify({ entryIds }) });
-      return body !== null && Array.isArray(body.rows) ? body : null;
+      // GET with the ids in the query, not a POST body: this is the shape the
+      // desktop shell is known to forward intact.
+      const query = encodeURIComponent(entryIds.join(','));
+      const body = await request(`/plan?entryIds=${query}`);
+      if (body === null || !Array.isArray(body.rows)) {
+        console.warn('[sidebar-fold] could not read the layout plan from the host', ENDPOINT);
+        return null;
+      }
+      return body;
     }
 
     async function loadSettings() {
@@ -306,23 +313,35 @@ window.__ModuleLoader__.load({
       }, [ctx]);
 
       /** Map a plan id to the DOM row it refers to: same order, minus our own. */
+      /**
+       * Map a plan id to the DOM row it refers to.
+       *
+       * Matched by `aria-label`, not by position. The nav can contain a row that
+       * is not a slot entry at all — a shipped "more" affordance does exactly
+       * that — and a positional match then either shifts every row by one or, as
+       * the first version did, refuses to match anything and silently skips the
+       * whole plan. Rows whose label matches no entry are left alone.
+       */
       const rowMap = React.useCallback(ids => {
         const nav = navOf(nodeRef.current);
         const selfRow = rowOf(nodeRef.current);
         const map = new Map();
         if (nav === null) return map;
+        const labels = entryLabels(ctx);
         const rows = panelRows(nav).filter(el => el !== selfRow);
-        // `ids` comes from the registry and includes our own entry; the rows we
-        // just collected exclude it. Comparing the two without that correction
-        // made every count mismatch, so no ordering was ever applied.
-        const others = ids.filter(id => id !== 'sidebar-fold');
-        // The registry order and the DOM order agree because the shell maps one
-        // to the other; if they ever disagree, do nothing rather than shuffle
-        // the wrong rows.
-        if (rows.length !== others.length) return map;
-        others.forEach((id, index) => { map.set(id, rows[index]); });
+        const byLabel = new Map();
+        for (const [id, label] of labels) {
+          if (!byLabel.has(label)) byLabel.set(label, []);
+          byLabel.get(label).push(id);
+        }
+        for (const row of rows) {
+          const label = row.getAttribute('aria-label');
+          if (label === null || !byLabel.has(label)) continue;
+          const id = byLabel.get(label).shift();
+          if (id !== undefined && ids.includes(id)) map.set(id, row);
+        }
         return map;
-      }, []);
+      }, [ctx]);
 
       const refresh = React.useCallback(async () => {
         if (settingsRef.current === null) settingsRef.current = await loadSettings();

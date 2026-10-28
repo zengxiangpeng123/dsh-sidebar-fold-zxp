@@ -74,8 +74,19 @@ export function apply(ctx) {
         // The browser knows which entries exist; the host knows the ordering
         // rules. Asking the host to compute the layout keeps that rule set in
         // the tested module instead of duplicating it in client.js.
+        //
+        // GET as well as POST on purpose: the desktop shell serves the page from
+        // its own scheme and forwards requests to this server, and a plain GET
+        // with the ids in the query is the shape that is known to survive that
+        // hop.
+        if (req.method === 'GET') {
+          const raw = url.searchParams.get('entryIds') ?? ''
+          const entryIds = raw === '' ? [] : raw.split(',').map(id => id.trim()).filter(id => id !== '')
+          json(res, 200, planLayout({ settings, entryIds }))
+          return
+        }
         if (req.method !== 'POST') {
-          json(res, 405, { error: 'method not allowed', allow: ['POST'] })
+          json(res, 405, { error: 'method not allowed', allow: ['GET', 'POST'] })
           return
         }
         const parsed = parseJsonObject(await readBody(req))

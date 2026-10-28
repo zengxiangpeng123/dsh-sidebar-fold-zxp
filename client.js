@@ -129,9 +129,25 @@ window.__ModuleLoader__.load({
 
     /** Read the rows as `{ key, row }`, in the shell's current order. */
     function collectRows(nav) {
+
       const seen = new Map()
+
       return panelRows(nav).map((row, index) => ({ key: keyOf(row, index, seen), row }))
+
     }
+
+    
+
+    /** Rows the settings page must not offer: they are hidden by rule, not by choice. */
+
+    function collectManageableRows(nav) {
+
+      return collectRows(nav).filter(entry => !ALWAYS_HIDDEN.includes(entry.key))
+
+    }
+
+    
+
 
     // ── what the sidebar saw, shared with the settings page ──────────────────
 
@@ -184,6 +200,17 @@ window.__ModuleLoader__.load({
       return `nav > button[aria-label=${JSON.stringify(key)}]`
     }
 
+    /**
+     * Rows that are always hidden, by their visible label.
+     *
+     * 「更多」 is the shell's own overflow affordance: it belongs to no plugin, it
+     * cannot be grouped, and at the bottom of the list it reads as clutter. It is
+     * hidden unconditionally rather than offered in Settings, because there is
+     * nothing to configure about it — and because it has no stable id to key a
+     * preference on, only this label.
+     */
+    const ALWAYS_HIDDEN = ['更多', 'More']
+
     function buildCss(config) {
       const parts = []
 
@@ -197,6 +224,10 @@ window.__ModuleLoader__.load({
 
       for (const key of Array.isArray(config.hidden) ? config.hidden : []) {
         parts.push(`${selectorFor(key)} { display: none !important; }`)
+      }
+
+      for (const label of ALWAYS_HIDDEN) {
+        parts.push(`nav > button[aria-label=${JSON.stringify(label)}] { display: none !important; }`)
       }
 
       // The fold hides every row except the toggle and the panel being read. It
@@ -265,13 +296,13 @@ window.__ModuleLoader__.load({
       // configuration or the fold changes.
       React.useEffect(() => {
         const nav = navOf(nodeRef.current)
-        if (nav !== null) setObserved(collectRows(nav).map(entry => entry.key))
+        if (nav !== null) setObserved(collectManageableRows(nav).map(entry => entry.key))
         applyConfig()
 
         if (nav === null) return undefined
         const observer = new MutationObserver(() => {
           const again = navOf(nodeRef.current)
-          if (again !== null) setObserved(collectRows(again).map(entry => entry.key))
+          if (again !== null) setObserved(collectManageableRows(again).map(entry => entry.key))
         })
         observer.observe(nav, { childList: true })
         return () => observer.disconnect()
@@ -427,3 +458,5 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
+

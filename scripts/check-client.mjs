@@ -2,13 +2,13 @@
 /**
  * Structural checks for the browser half.
  *
- * `client.js` cannot be imported by Node, so the invariants that matter are
- * checked as source rules. Each one exists because breaking it fails silently:
- * the code still runs and the sidebar just quietly stops doing the right thing.
+ * client.js cannot be imported by Node, so the invariants that matter are checked
+ * as source rules. Each one exists because breaking it fails silently: the code
+ * still runs and the sidebar just stops doing the right thing.
  *
  * This version is one stylesheet and no round trips, after every network- and
  * registry-based design failed in the desktop shell without a visible error.
- * These checks encode that decision, so a later "improvement" cannot quietly
+ * These checks encode that decision, so a later improvement cannot quietly
  * reintroduce the fragile parts.
  */
 import { readFileSync } from 'node:fs'
@@ -36,6 +36,8 @@ const checks = [
     /JSON\.stringify\(key\)/.test(source)],
   ['folds with an attribute rule on the document element',
     /data-fold-collapsed/.test(source) && /html\[/.test(source)],
+  ['hides the overflow row by a fixed rule',
+    /ALWAYS_HIDDEN/.test(source) && /ALWAYS_HIDDEN\.includes/.test(source)],
   ['keeps the configuration in this page', /localStorage\.setItem\(CONFIG_KEY/.test(source)],
   ['registers exactly one sidebar row', (source.match(/name: 'sidebar\.panellist'/g) ?? []).length === 1],
   ['registers exactly one settings page', (source.match(/name: 'settings\.section'/g) ?? []).length === 1],
@@ -46,7 +48,7 @@ const checks = [
 let failed = 0
 for (const [name, ok] of checks) {
   if (!ok) failed += 1
-  console.log(`${ok ? '✔' : '✘'} ${name}`)
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}`)
 }
 
 if (failed > 0) {

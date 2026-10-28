@@ -9,6 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, settingsFile } from './src/settings.js'
 import { parseJsonObject } from './src/body.js'
+import { planLayout } from './src/plan.js'
 
 const BASE = '/api/dsh-sidebar-fold-zxp'
 
@@ -66,6 +67,23 @@ export function apply(ctx) {
         settings = await saveSettings(file, parsed.value)
         userSaved = true
         json(res, 200, { settings })
+        return
+      }
+      if (route === '/plan') {
+        // The browser knows which entries exist; the host knows the ordering
+        // rules. Asking the host to compute the layout keeps that rule set in
+        // the tested module instead of duplicating it in client.js.
+        if (req.method !== 'POST') {
+          json(res, 405, { error: 'method not allowed', allow: ['POST'] })
+          return
+        }
+        const parsed = parseJsonObject(await readBody(req))
+        if (!parsed.ok) {
+          json(res, 400, { error: parsed.error })
+          return
+        }
+        const entryIds = Array.isArray(parsed.value.entryIds) ? parsed.value.entryIds : []
+        json(res, 200, planLayout({ settings, entryIds }))
         return
       }
       json(res, 404, { error: 'not found' })

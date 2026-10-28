@@ -121,3 +121,13 @@ test('整组条目都被隐藏时，组上标 allHidden', () => {
 })
 
 
+
+test('组带上 visibleCount，隐藏的条目不计数', () => {
+  const plan = planLayout({
+    settings: settings({ groups: [{ id: 'dev', name: '开发', collapsed: false }], assignments: { a: 'dev', b: 'dev' }, hidden: ['b'] }),
+    entryIds: ['a', 'b'],
+  })
+  const dev = plan.groups.find(group => group.id === 'dev')
+  assert.equal(dev.count, 2)
+  assert.equal(dev.visibleCount, 1)
+})

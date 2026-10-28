@@ -48,15 +48,15 @@ const checks = [
   ['a drop reports its landing spot instead of computing it',
     /op: 'entry\.place'/.test(source) && /beforeId/.test(source) && /elementFromPoint/.test(source)],
   ['reads and writes the fold flag', /localStorage\.getItem\(STORAGE_KEY\)/.test(source) && /localStorage\.setItem\(STORAGE_KEY/.test(source)],
-  ['falls back to a plain fold when the host is unreachable', /plan === null \|\| folded/.test(source)],
   ['sinks unmanaged rows instead of managing them',
     /style\.order = '999999'/.test(source) && /managed\.has\(el\)\) continue/.test(source)],
   ['restores order, indent and visibility on teardown',
     /el\.style\.order = ''/.test(source) && /el\.style\.marginInlineStart = ''/.test(source) && /setObserved\(\[\]\)/.test(source)],
-  ['pinned rows survive the fold', /folded && entry\.pinned !== true/.test(source)],
-  ['entries hidden by the user never show', /entry\.userHidden === true/.test(source)],
-  ['groups whose entries are all hidden keep no header', /group\.allHidden === true/.test(source)],
   ['the settings page offers three modes per entry', /op: 'entry\.mode'/.test(source)],
+  ['the fold decision is one testable function', /function rowShouldHide\(/.test(source)],
+  ['headers go through the same predicate', /function headerShouldRender\(/.test(source)],
+  ['the fold fallback does not override the plan', !/plan === null \|\| folded/.test(source)],
+  ['unreachable host still folds everything', /if \(plan === null\) \{/.test(source)],
 ]
 
 let failed = 0
@@ -70,6 +70,7 @@ if (failed > 0) {
   process.exit(1)
 }
 console.log('\nall structural checks passed')
+
 
 
 

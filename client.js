@@ -357,6 +357,48 @@ window.__ModuleLoader__.load({
       }
     }
     
+    /**
+    
+     * Should this row be hidden? The whole feature is this one predicate, so it is
+    
+     * a named function with primitives in and a boolean out — testable by
+    
+     * `test/visibility.test.js`, which loads this file in a sandbox.
+    
+     *
+    
+     * Precedence, in order: an entry the user hid is always hidden (that wins even
+    
+     * over the "keep the open panel visible" exemption, because hiding is an
+    
+     * explicit statement about that entry); the open panel is otherwise kept; then
+    
+     * the block fold (which `pinned` opts out of), then the group's own collapse.
+    
+     */
+    
+    function rowShouldHide({ folded, pinned, userHidden, groupCollapsed, isActive }) {
+    
+      if (userHidden === true) return true
+    
+      if (isActive === true) return false
+    
+      return (folded === true && pinned !== true) || groupCollapsed === true
+    
+    }
+    
+    
+    
+    /** A header is drawn only when the block is open, the group is real and not empty. */
+    
+    function headerShouldRender({ folded, implicit, allHidden }) {
+    
+      return folded !== true && implicit !== true && allHidden !== true
+    
+    }
+    
+    
+    
     function applyPlan(nav, selfRow, folded, plan, byKey, onHeaderClick, overrides) {
       if (nav === null) return
 
@@ -433,7 +475,10 @@ window.__ModuleLoader__.load({
 
       // Nothing configured yet: fall back to the plain fold, so the plugin still
       // does its original job on a fresh install or when the host is unreachable.
-      if (plan === null || folded) {
+      // Only when there is no plan at all (host unreachable). Running this while
+  // folded *with* a plan used to be harmless because it recomputed the same
+  // answer; now it would overwrite the first loop and re-hide every pinned row.
+  if (plan === null) {
         const kept = activeRow(nav)
         for (const [, el] of byKey) {
           if (plan !== null && !managed.has(el)) continue
@@ -476,7 +521,7 @@ window.__ModuleLoader__.load({
       name.textContent = group.name
       const count = document.createElement('span')
       count.className = 'dsh-fold-header-count'
-      count.textContent = String(group.count)
+      count.textContent = String(group.visibleCount ?? group.count)
 
       header.append(svg, name, count)
       // Capture phase: the shell's own row handler must never see this click.
@@ -550,14 +595,18 @@ window.__ModuleLoader__.load({
         collapsedRef.current = next
         setCollapsed(next)
         writeCollapsedOverrides(next)
+        // Persist one operation, not a whole configuration object: the sidebar's
+        // copy is a snapshot from mount time, and writing it back wholesale
+        // silently discarded anything the settings page had changed since.
         void (async () => {
-          const settings = settingsRef.current ?? (await loadSettings())
-          if (settings === null) return
-          const groups = (settings.groups ?? []).map(entry => (
-            entry.id === group.id ? { ...entry, collapsed: !was } : entry
-          ))
-          const saved = await saveSettings({ ...settings, groups })
-          if (saved !== null) settingsRef.current = saved
+          const nav = navOf(nodeRef.current)
+          const selfRow = rowOf(nodeRef.current)
+          const keys = nav === null ? [] : collectRows(nav, selfRow).map(entry => entry.key)
+          const body = await request('/edit', {
+            method: 'POST',
+            body: JSON.stringify({ entryIds: keys, op: { op: 'group.collapse', id: group.id, collapsed: !was } }),
+          })
+          if (body !== null && body.settings) settingsRef.current = body.settings
         })()
       }, [])
 
@@ -615,6 +664,14 @@ window.__ModuleLoader__.load({
         observer.observe(nav, { childList: true, attributes: true, attributeFilter: ['aria-current'] })
         return () => observer.disconnect()
       }, [folded, plan, refresh, toggleGroup, collapsed])
+
+      // The settings page announces its own changes; without this the sidebar
+      // keeps painting a plan computed before the user pinned or hid anything.
+      React.useEffect(() => {
+        const onChange = () => { void refresh() }
+        window.addEventListener('dsh-sidebar-fold:changed', onChange)
+        return () => window.removeEventListener('dsh-sidebar-fold:changed', onChange)
+      }, [refresh])
 
       // Hand the sidebar back untouched when this plugin goes away.
       React.useEffect(() => () => {
@@ -704,6 +761,10 @@ window.__ModuleLoader__.load({
         setError('')
         setSettings(body.settings)
         if (body.plan) setPlan(body.plan)
+                // Tell the sidebar to re-read the plan: its own refresh only fires on
+                // mount, on a key change, or on an unrelated DOM mutation, so a pin
+                // made here would otherwise not show up until the next navigation.
+                try { window.dispatchEvent(new CustomEvent('dsh-sidebar-fold:changed')) } catch { /* no CustomEvent */ }
       }, [ids, t])
 
       const beginDrag = React.useCallback((event, row) => {
@@ -1024,7 +1085,16 @@ React.createElement('select', {
     }
 
     return {
-      inject: ['slots'],
+
+          // Exposed for `test/visibility.test.js`: the browser ignores extra keys, and
+
+          // the alternative is a predicate no test can reach.
+
+          rowShouldHide,
+
+          headerShouldRender,
+
+          inject: ['slots'],
       apply(ctx) {
         const t = translator(localeOf(ctx))
         const removeStyles = injectStyles()
@@ -1051,6 +1121,10 @@ React.createElement('select', {
     }
   },
 })
+
+
+
+
 
 
 

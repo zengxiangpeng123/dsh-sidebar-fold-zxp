@@ -182,3 +182,24 @@ test('entry.mode：未知 mode 被拒绝', () => {
   assert.match(out.error, /unknown mode/)
 })
 
+
+// ── 审查修复：清理、校验、可见计数 ────────────────────────────────────────
+
+test('prune：同时清掉 pinned/hidden 里的幽灵 key', () => {
+  const start = {
+    groups: [],
+    order: ['alpha'],
+    assignments: {},
+    pinned: ['alpha', 'gone'],
+    hidden: ['gone2'],
+  }
+  const out = run({ op: 'prune' }, start, ['alpha'])
+  assert.deepEqual(out.settings.pinned, ['alpha'])
+  assert.deepEqual(out.settings.hidden, [])
+})
+
+test('entry.mode：空 entryId 被拒绝，不制造 "undefined" 幽灵键', () => {
+  const out = run({ op: 'entry.mode', entryId: '', mode: 'pin' })
+  assert.equal(out.ok, false)
+  assert.match(out.error, /entryId/)
+})

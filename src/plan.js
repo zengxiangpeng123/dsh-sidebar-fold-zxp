@@ -107,6 +107,9 @@ export function planLayout({ settings, entryIds }) {
       order: index * GROUP_STEP - HEADER_OFFSET,
       collapsed: group.collapsed,
       count: group.members.length,
+            // What the header shows: a count that includes switched-off entries reads
+            // as a lie the moment hiding is used ("3" above two rows).
+            visibleCount: group.members.filter(memberId => !userHiddenSet.has(memberId)).length,
             allHidden: group.members.every(memberId => userHiddenSet.has(memberId)),
       implicit,
     })
@@ -135,4 +138,5 @@ export function planLayout({ settings, entryIds }) {
 
   return { groups: headers, rows, missing }
 }
+
 

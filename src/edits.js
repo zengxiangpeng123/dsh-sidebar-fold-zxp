@@ -220,7 +220,8 @@ export function applyEdit({ settings, entryIds, op }) {
       if (mode !== 'follow' && mode !== 'pin' && mode !== 'hide') {
         return { ok: false, error: `unknown mode: ${String(mode)}` }
       }
-      const entryId = String(op.entryId)
+      const entryId = typeof op.entryId === 'string' ? op.entryId.trim() : ''
+      if (entryId === '') return { ok: false, error: 'entryId is required' }
       const pinned = (current.pinned ?? []).filter(id => id !== entryId)
       const hidden = (current.hidden ?? []).filter(id => id !== entryId)
       if (mode === 'pin') pinned.push(entryId)
@@ -240,6 +241,11 @@ export function applyEdit({ settings, entryIds, op }) {
         ...current,
         assignments,
         order: current.order.filter(id => live.has(id)),
+        // The two new lists hold the same kind of key, so an uninstalled plugin
+        // must be cleared out of them too — otherwise a ghost key hides an entry
+        // for ever, and the settings page never even lists it as missing.
+        pinned: (current.pinned ?? []).filter(id => live.has(id)),
+        hidden: (current.hidden ?? []).filter(id => live.has(id)),
       })
     }
 
@@ -247,4 +253,5 @@ export function applyEdit({ settings, entryIds, op }) {
       return { ok: false, error: `unknown operation: ${kind}` }
   }
 }
+
 

@@ -51,9 +51,8 @@ const checks = [
   ['falls back to a plain fold when the host is unreachable', /plan === null \|\| folded/.test(source)],
   ['sinks unmanaged rows instead of managing them',
     /style\.order = '999999'/.test(source) && /managed\.has\(el\)\) continue/.test(source)],
-
-  ['restores order and visibility on teardown',
-    /for \(const el of panelRows\(nav\)\)[\s\S]{0,80}style\.order = ''/.test(source) && /self\.style\.order = ''/.test(source)],
+  ['restores order, indent and visibility on teardown',
+    /el\.style\.order = ''/.test(source) && /el\.style\.marginInlineStart = ''/.test(source) && /setObserved\(\[\]\)/.test(source)],
 ]
 
 let failed = 0
@@ -67,4 +66,5 @@ if (failed > 0) {
   process.exit(1)
 }
 console.log('\nall structural checks passed')
+
 

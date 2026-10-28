@@ -212,6 +212,21 @@ export function applyEdit({ settings, entryIds, op }) {
       if (placed.ok !== true) return placed
       return change(placed.settings)
     }
+    case 'entry.mode': {
+      // One switch instead of two checkboxes: "pinned" and "hidden" are mutually
+      // exclusive readings of the same row, and offering them separately invites
+      // the state where both are set.
+      const mode = op.mode
+      if (mode !== 'follow' && mode !== 'pin' && mode !== 'hide') {
+        return { ok: false, error: `unknown mode: ${String(mode)}` }
+      }
+      const entryId = String(op.entryId)
+      const pinned = (current.pinned ?? []).filter(id => id !== entryId)
+      const hidden = (current.hidden ?? []).filter(id => id !== entryId)
+      if (mode === 'pin') pinned.push(entryId)
+      if (mode === 'hide') hidden.push(entryId)
+      return change({ ...current, pinned, hidden })
+    }
 
     case 'prune': {
       // Drop references to entries that no longer exist, so an uninstalled
@@ -232,3 +247,4 @@ export function applyEdit({ settings, entryIds, op }) {
       return { ok: false, error: `unknown operation: ${kind}` }
   }
 }
+

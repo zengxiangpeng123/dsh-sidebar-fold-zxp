@@ -152,3 +152,33 @@ test('每次编辑的结果都是清洗过的：脏东西进不来', () => {
   const out = run({ op: 'entry.assign', entryId: 'beta', groupId: 'nope' })
   assert.deepEqual(out.settings.assignments, {})
 })
+
+// ── entry.mode：跟随折叠 / 折叠时仍显示 / 始终隐藏 ────────────────────────
+
+test('entry.mode：pin 写进 pinned，并从 hidden 移除', () => {
+  const out = run({ op: 'entry.mode', entryId: 'alpha', mode: 'pin' },
+    { groups: [], order: [], assignments: {}, hidden: ['alpha'] })
+  assert.deepEqual(out.settings.pinned, ['alpha'])
+  assert.deepEqual(out.settings.hidden, [])
+})
+
+test('entry.mode：hide 写进 hidden，并从 pinned 移除', () => {
+  const out = run({ op: 'entry.mode', entryId: 'alpha', mode: 'hide' },
+    { groups: [], order: [], assignments: {}, pinned: ['alpha'] })
+  assert.deepEqual(out.settings.pinned, [])
+  assert.deepEqual(out.settings.hidden, ['alpha'])
+})
+
+test('entry.mode：follow 两个列表都不留', () => {
+  const out = run({ op: 'entry.mode', entryId: 'alpha', mode: 'follow' },
+    { groups: [], order: [], assignments: {}, pinned: ['alpha'], hidden: ['alpha'] })
+  assert.deepEqual(out.settings.pinned, [])
+  assert.deepEqual(out.settings.hidden, [])
+})
+
+test('entry.mode：未知 mode 被拒绝', () => {
+  const out = run({ op: 'entry.mode', entryId: 'alpha', mode: 'delete' })
+  assert.equal(out.ok, false)
+  assert.match(out.error, /unknown mode/)
+})
+

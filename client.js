@@ -266,6 +266,41 @@ window.__ModuleLoader__.load({
     // ── rendering ────────────────────────────────────────────────────────────
 
     /**
+
+     * Indent a grouped row and draw the guide line that connects it to its header.
+
+     *
+
+     * The line is a `box-shadow` rather than a border: a border would change the
+
+     * row width and shift the content by a pixel, while an inset shadow paints the
+
+     * same 1px edge without taking part in layout.
+
+     */
+
+    const GUIDE_COLOR = 'rgba(128, 132, 140, .30)'
+
+    const INDENT = '20px'
+
+    
+
+    function setGrouped(el, ungrouped) {
+
+      const wantIndent = ungrouped ? '' : INDENT
+
+      const wantGuide = ungrouped ? '' : `inset 1px 0 0 0 ${GUIDE_COLOR}`
+
+      if (el.style.marginInlineStart !== wantIndent) el.style.marginInlineStart = wantIndent
+
+      if (el.style.boxShadow !== wantGuide) el.style.boxShadow = wantGuide
+
+    }
+
+    
+
+    /**
+
      * Show or hide a row.
      *
      * `style.display` rather than the `hidden` attribute: the rows carry a class
@@ -324,17 +359,22 @@ window.__ModuleLoader__.load({
           // Indent a grouped row so the hierarchy reads at a glance: header, then
           // the rows that belong to it. An ungrouped row keeps full width, so
           // "not in any group" still looks like the default state.
-          el.style.marginInlineStart = entry.ungrouped === true ? '' : '12px'
+          setGrouped(el, entry.ungrouped === true)
           // The panel the user is looking at stays visible even inside a collapsed
           // group, or they lose track of where they are.
           const hide = (folded || collapsedById.get(entry.groupId) === true) && el !== kept
           setShown(el, !hide)
         }
-        for (const group of plan.groups) {
-          if (group.implicit) continue
-          const header = makeHeader(group, folded ? false : collapsedById.get(group.id) === true, onHeaderClick)
-          header.style.order = String(group.order)
-          nav.appendChild(header)
+        // Folded means the whole area is closed: the headers go with it, exactly
+        // like the rows. Leaving them behind reads as "the fold ignored the
+        // groups", which is what the first version shipped.
+        if (!folded) {
+          for (const group of plan.groups) {
+            if (group.implicit) continue
+            const header = makeHeader(group, collapsedById.get(group.id) === true, onHeaderClick)
+            header.style.order = String(group.order)
+            nav.appendChild(header)
+          }
         }
       }
 
@@ -346,6 +386,7 @@ window.__ModuleLoader__.load({
         if (managed.has(el)) continue
         el.style.order = '999999'
         el.style.marginInlineStart = ''
+        el.style.boxShadow = ''
         setShown(el, true)
       }
 
@@ -414,7 +455,7 @@ window.__ModuleLoader__.load({
         strokeLinecap: 'round',
         strokeLinejoin: 'round',
         'aria-hidden': 'true',
-        style: { transform: folded ? 'rotate(-90deg)' : 'none', transition: 'transform 140ms ease' },
+        style: { transform: folded ? 'rotate(-90deg)' : 'none', transformBox: 'fill-box', transformOrigin: 'center', transition: 'transform 140ms ease' },
       }, React.createElement('path', { d: 'M4 6.5 8 10.5 12 6.5' }))
     }
 
@@ -543,7 +584,7 @@ window.__ModuleLoader__.load({
             setShown(el, true)
             el.style.order = ''
             el.style.marginInlineStart = ''
-          }
+            el.style.boxShadow = ''          }
           nav.style.display = ''
           nav.style.flexDirection = ''
         }
@@ -825,7 +866,14 @@ window.__ModuleLoader__.load({
         .dsh-fold-header:focus-visible {
           opacity: 1; outline: 2px solid var(--dsw-border-l1, #4C7DFF); outline-offset: -2px;
         }
-        .dsh-fold-header-chevron { flex: 0 0 auto; transition: transform 140ms ease; }
+        .dsh-fold-header-chevron {
+          flex: 0 0 auto;
+          /* An SVG rotates about the corner of its own coordinate box by default,
+             which on a 12px glyph reads as "it never moves". */
+          transform-box: fill-box;
+          transform-origin: center;
+          transition: transform 140ms ease;
+        }
         .dsh-fold-header[aria-expanded="true"] .dsh-fold-header-chevron { transform: none; }
         .dsh-fold-header[aria-expanded="false"] .dsh-fold-header-chevron { transform: rotate(-90deg); }
         .dsh-fold-header-name {
@@ -938,5 +986,8 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
+
+
 
 

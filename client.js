@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
         'set.loading': '读取配置…',
         'set.groups': '分组',
         'set.entries': '条目',
-        'set.entriesHint': '自上而下就是侧栏里的显示顺序；箭头只在同一组内移动。',
+        'set.entriesHint': '拖动条目可以换组、换位置；也可以用下拉框和箭头精确调整。',
         'set.name': '新分组名称',
         'set.add': '新建分组',
         'set.collapsed': '默认折叠',
@@ -461,6 +461,10 @@ window.__ModuleLoader__.load({
       const [labels, setLabels] = React.useState(() => entryLabels(ctx));
       const [error, setError] = React.useState('');
       const [name, setName] = React.useState('');
+      // Which row is being dragged. A ref as well, because dataTransfer is not
+      // readable during dragOver and some environments do not carry it at all.
+      const [dragging, setDragging] = React.useState(null);
+      const draggedRef = React.useRef(null);
 
       React.useEffect(() => {
         let alive = true;
@@ -528,7 +532,40 @@ window.__ModuleLoader__.load({
           onClick: () => { void send({ op: 'group.remove', id: group.id }); },
         }, '✕'));
 
-      const entryRow = row => React.createElement('div', { className: 'dsh-fold-set-row', key: row.id },
+      const entryRow = row => React.createElement('div', {
+        className: 'dsh-fold-set-row dsh-fold-set-drag',
+        key: row.id,
+        draggable: true,
+        'data-dragging': dragging === row.id ? 'true' : 'false',
+        'data-drop-target': dragging !== null && dragging !== row.id ? 'true' : 'false',
+        onDragStart: event => {
+          draggedRef.current = row.id;
+          setDragging(row.id);
+          try {
+            event.dataTransfer.setData('text/plain', row.id);
+            event.dataTransfer.effectAllowed = 'move';
+          } catch { /* some webviews expose a read-only dataTransfer */ }
+        },
+        onDragEnd: () => { draggedRef.current = null; setDragging(null); },
+        onDragOver: event => {
+          // Both are required: preventDefault opts in to dropping, and stopping
+          // the bubble keeps the group's own handler from also firing.
+          event.preventDefault();
+          event.stopPropagation();
+          try { event.dataTransfer.dropEffect = 'move'; } catch { /* ignore */ }
+        },
+        onDrop: event => {
+          event.preventDefault();
+          event.stopPropagation();
+          const id = draggedRef.current ?? (event.dataTransfer?.getData('text/plain') ?? '');
+          draggedRef.current = null;
+          setDragging(null);
+          if (id === '' || id === row.id) return;
+          // Dropping onto a row means "put it just before this one".
+          void send({ op: 'entry.place', entryId: id, groupId: row.groupId, beforeId: row.id });
+        },
+      },
+        React.createElement('span', { className: 'dsh-fold-set-grip', 'aria-hidden': 'true' }, '⠿'),
         React.createElement('span', { className: 'dsh-fold-set-label', title: row.id }, labels.get(row.id) ?? row.id),
         React.createElement('select', {
           className: 'dsh-fold-set-select',
@@ -547,6 +584,32 @@ window.__ModuleLoader__.load({
           type: 'button', className: 'dsh-fold-set-button', title: t('set.down'),
           onClick: () => { void send({ op: 'entry.move', entryId: row.id, delta: 1 }); },
         }, '↓'));
+
+      /** One group with its rows; the whole block accepts a drop. */
+      const groupBlock = group => React.createElement('div', {
+        key: group.id,
+        className: 'dsh-fold-set-group',
+        onDragOver: event => { event.preventDefault(); },
+        onDrop: event => {
+          event.preventDefault();
+          const id = draggedRef.current ?? (event.dataTransfer?.getData('text/plain') ?? '');
+          draggedRef.current = null;
+          setDragging(null);
+          if (id === '') return;
+          // Dropping on the group itself means "at the end of this group".
+          void send({
+            op: 'entry.place',
+            entryId: id,
+            groupId: group.implicit ? null : group.id,
+            beforeId: null,
+          });
+        },
+      },
+      React.createElement('div', { className: 'dsh-fold-set-grouphead' },
+        React.createElement('span', { className: 'dsh-fold-set-groupname' },
+          group.implicit ? t('ungrouped') : group.name),
+        React.createElement('span', { className: 'dsh-fold-set-groupcount' }, String(group.count))),
+      rows.filter(row => row.groupId === group.id).map(entryRow));
 
       return React.createElement('div', { className: 'dsh-fold-set' },
         error === '' ? null : React.createElement('div', { className: 'dsh-fold-set-error' }, error),
@@ -581,7 +644,7 @@ window.__ModuleLoader__.load({
         React.createElement('div', { className: 'dsh-fold-set-hint' }, t('set.entriesHint')),
         rows.length === 0
           ? React.createElement('div', { className: 'dsh-fold-set-hint' }, t('set.noEntries'))
-          : rows.map(entryRow),
+          : (plan.groups ?? []).map(groupBlock),
 
         missing.length === 0 ? null : React.createElement('div', { className: 'dsh-fold-set-legend' }, t('set.missing')),
         missing.length === 0 ? null : React.createElement('div', { className: 'dsh-fold-set-row' },
@@ -681,6 +744,32 @@ window.__ModuleLoader__.load({
           white-space: nowrap;
         }
         .dsh-fold-set-button:hover { opacity: 1; }
+
+        /* ── groups and dragging ─────────────────────────────────────────── */
+        .dsh-fold-set-group {
+          display: flex; flex-direction: column;
+          padding: 2px 0 4px; border-radius: 8px;
+        }
+        .dsh-fold-set-grouphead {
+          display: flex; align-items: center; gap: 6px;
+          padding: 4px 2px 2px;
+          font-size: 10px; letter-spacing: .03em;
+          opacity: .45;
+        }
+        .dsh-fold-set-groupname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dsh-fold-set-groupcount { font-variant-numeric: tabular-nums; }
+        .dsh-fold-set-drag { padding-inline-start: 6px; border-radius: 6px; }
+        .dsh-fold-set-drag[data-dragging="true"] { opacity: .4; }
+        /* A line where the row would land, so the drop position is visible
+           before the pointer is released. */
+        .dsh-fold-set-drag[data-drop-target="true"] {
+          box-shadow: inset 0 2px 0 0 var(--dsw-alias-border-l1, #4C7DFF);
+        }
+        .dsh-fold-set-grip {
+          flex: 0 0 auto; cursor: grab; opacity: .3;
+          font-size: 11px; user-select: none;
+        }
+        .dsh-fold-set-drag:hover .dsh-fold-set-grip { opacity: .7; }
       `;
       document.head.appendChild(style);
       return () => { style.remove(); };

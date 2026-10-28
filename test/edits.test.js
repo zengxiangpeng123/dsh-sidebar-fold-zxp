@@ -98,6 +98,56 @@ test('未知操作被拒绝，而不是悄悄改变配置', () => {
   assert.match(out.error, /unknown operation/)
 })
 
+// ── entry.place：拖拽落点 ──────────────────────────────────────────────────
+
+const withGroup = {
+  groups: [{ id: 'dev', name: '开发', collapsed: false }],
+  order: ['alpha', 'beta'],
+  assignments: { alpha: 'dev', beta: 'dev' },
+}
+
+test('拖到组标题：放进该组末尾', () => {
+  const out = run({ op: 'entry.place', entryId: 'gamma', groupId: 'dev', beforeId: null }, withGroup)
+  assert.equal(out.settings.assignments.gamma, 'dev')
+  assert.deepEqual(out.plan.rows.filter(r => r.groupId === 'dev').map(r => r.id), ['alpha', 'beta', 'gamma'])
+})
+
+test('拖到某一行上：放在那一行前面', () => {
+  const out = run({ op: 'entry.place', entryId: 'gamma', groupId: 'dev', beforeId: 'beta' }, withGroup)
+  assert.deepEqual(out.plan.rows.filter(r => r.groupId === 'dev').map(r => r.id), ['alpha', 'gamma', 'beta'])
+})
+
+test('从组里拖回未分组：取消归组并排在未分组末尾', () => {
+  const start = { ...withGroup, order: ['alpha', 'beta', 'delta'] }
+  const out = run({ op: 'entry.place', entryId: 'alpha', groupId: null, beforeId: null }, start)
+  assert.equal(out.settings.assignments.alpha, undefined)
+  // gamma was already ungrouped and unordered, so it sorts before delta by id.
+  assert.deepEqual(out.plan.rows.filter(r => r.groupId === UNGROUPED_ID).map(r => r.id), ['delta', 'gamma', 'alpha'])
+})
+
+test('拖到自己前面：空操作', () => {
+  const out = run({ op: 'entry.place', entryId: 'alpha', groupId: 'dev', beforeId: 'alpha' }, withGroup)
+  assert.equal(out.ok, true)
+  assert.deepEqual(out.settings.order, withGroup.order)
+})
+
+test('落点指向不存在的行：退化成放到该组末尾，而不是拒绝', () => {
+  const out = run({ op: 'entry.place', entryId: 'gamma', groupId: 'dev', beforeId: 'gone' }, withGroup)
+  assert.deepEqual(out.plan.rows.filter(r => r.groupId === 'dev').map(r => r.id), ['alpha', 'beta', 'gamma'])
+})
+
+test('拖到不存在的组：拒绝并说明原因', () => {
+  const out = run({ op: 'entry.place', entryId: 'gamma', groupId: 'nope', beforeId: null }, withGroup)
+  assert.equal(out.ok, false)
+  assert.match(out.error, /unknown group/)
+})
+
+test('把唯一组成员拖走后，空组不残留为空标题', () => {
+  const start = { groups: [{ id: 'dev', name: '开发', collapsed: false }], order: ['alpha'], assignments: { alpha: 'dev' } }
+  const out = run({ op: 'entry.place', entryId: 'alpha', groupId: null, beforeId: null }, start)
+  assert.deepEqual(out.plan.groups.map(g => g.id), [UNGROUPED_ID])
+})
+
 test('每次编辑的结果都是清洗过的：脏东西进不来', () => {
   const out = run({ op: 'entry.assign', entryId: 'beta', groupId: 'nope' })
   assert.deepEqual(out.settings.assignments, {})

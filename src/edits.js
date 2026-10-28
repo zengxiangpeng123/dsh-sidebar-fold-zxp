@@ -63,6 +63,62 @@ function moveEntry({ settings, plan, entryId, delta }) {
 }
 
 /**
+ * Drop one entry into a group, at a chosen place.
+ *
+ * This is what a drag in the settings page sends. The browser reports "I dragged
+ * A onto B"; deciding where that lands — which group, which neighbour, what the
+ * resulting global order is — happens here, so the rules stay testable and the
+ * page stays a view.
+ *
+ * `beforeId === null` means "at the end of that group", which is what dropping
+ * on a group header means. A `beforeId` that is not in the target group is
+ * treated the same way rather than rejected: the pointer landed somewhere the
+ * model no longer describes, and appending is a better answer than a no-op the
+ * user cannot explain.
+ */
+function placeEntry({ settings, plan, entryId, groupId, beforeId }) {
+  const target = typeof groupId === 'string' && groupId !== '' && groupId !== UNGROUPED_ID
+    ? groupId
+    : UNGROUPED_ID
+  if (target !== UNGROUPED_ID && !plan.groups.some(group => group.id === target)) {
+    return { ok: false, error: 'unknown group' }
+  }
+  if (typeof beforeId === 'string' && beforeId === entryId) return { ok: true, settings }
+
+  const buckets = new Map()
+  for (const group of plan.groups) buckets.set(group.id, [])
+  if (!buckets.has(UNGROUPED_ID)) buckets.set(UNGROUPED_ID, [])
+  for (const row of plan.rows) {
+    if (row.id === entryId) continue
+    const bucket = buckets.get(row.groupId) ?? buckets.get(UNGROUPED_ID)
+    bucket.push(row.id)
+  }
+
+  const bucket = buckets.get(target) ?? []
+  let at = bucket.length
+  if (typeof beforeId === 'string') {
+    const index = bucket.indexOf(beforeId)
+    if (index >= 0) at = index
+  }
+  bucket.splice(at, 0, entryId)
+  buckets.set(target, bucket)
+
+  // Flatten in group order. Buckets are visited by the plan's own group order,
+  // and the implicit group is appended when the plan did not list it (it only
+  // appears once something is in it, which is exactly this case).
+  const groupIds = plan.groups.map(group => group.id)
+  for (const id of buckets.keys()) if (!groupIds.includes(id)) groupIds.push(id)
+  const order = []
+  for (const id of groupIds) for (const member of buckets.get(id) ?? []) order.push(member)
+
+  const assignments = { ...settings.assignments }
+  if (target === UNGROUPED_ID) delete assignments[entryId]
+  else assignments[entryId] = target
+
+  return { ok: true, settings: { ...settings, order, assignments } }
+}
+
+/**
  * @param {object} input
  * @param {object} input.settings Current configuration.
  * @param {string[]} input.entryIds Every panel entry that exists right now.
@@ -143,6 +199,18 @@ export function applyEdit({ settings, entryIds, op }) {
 
     case 'entry.move': {
       return change(moveEntry({ settings: current, plan, entryId: String(op.entryId), delta: Number(op.delta) < 0 ? -1 : 1 }).settings)
+    }
+
+    case 'entry.place': {
+      const placed = placeEntry({
+        settings: current,
+        plan,
+        entryId: String(op.entryId),
+        groupId: op.groupId,
+        beforeId: typeof op.beforeId === 'string' ? op.beforeId : null,
+      })
+      if (placed.ok !== true) return placed
+      return change(placed.settings)
     }
 
     case 'prune': {

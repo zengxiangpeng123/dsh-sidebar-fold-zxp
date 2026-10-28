@@ -21,6 +21,9 @@ window.__ModuleLoader__.load({
         'set.groups': '分组',
         'set.entries': '条目',
         'set.entriesHint': '拖动条目可以换组、换位置；也可以用下拉框和箭头精确调整。',
+                'set.modeFollow': '跟随折叠',
+                'set.modePin': '折叠时仍显示',
+                'set.modeHide': '始终隐藏',
         'set.name': '新分组名称',
         'set.add': '新建分组',
         'set.collapsed': '默认折叠',
@@ -43,6 +46,9 @@ window.__ModuleLoader__.load({
         'set.groups': 'Groups',
         'set.entries': 'Entries',
         'set.entriesHint': 'Drag an entry to another group or position; the select and arrows are for precise moves.',
+                'set.modeFollow': 'Follow the fold',
+                'set.modePin': 'Keep visible when folded',
+                'set.modeHide': 'Always hidden',
         'set.name': 'New group name',
         'set.add': 'Add group',
         'set.collapsed': 'Collapsed',
@@ -806,6 +812,16 @@ window.__ModuleLoader__.load({
           title: row.id,
           onPointerDown: event => beginDrag(event, row),
         }, row.id),
+React.createElement('select', {
+          className: 'dsh-fold-set-select',
+          // Three readings of one row, so "pinned" and "hidden" cannot both be
+          // set by accident.
+          value: row.userHidden === true ? 'hide' : row.pinned === true ? 'pin' : 'follow',
+          onChange: event => { void send({ op: 'entry.mode', entryId: row.id, mode: event.target.value }) },
+        },
+        React.createElement('option', { value: 'follow' }, t('set.modeFollow')),
+        React.createElement('option', { value: 'pin' }, t('set.modePin')),
+        React.createElement('option', { value: 'hide' }, t('set.modeHide'))),
         React.createElement('select', {
           className: 'dsh-fold-set-select',
           value: row.groupId === '__ungrouped__' ? '' : row.groupId,
@@ -1035,6 +1051,7 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
 
 

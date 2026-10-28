@@ -56,6 +56,7 @@ const checks = [
   ['pinned rows survive the fold', /folded && entry\.pinned !== true/.test(source)],
   ['entries hidden by the user never show', /entry\.userHidden === true/.test(source)],
   ['groups whose entries are all hidden keep no header', /group\.allHidden === true/.test(source)],
+  ['the settings page offers three modes per entry', /op: 'entry\.mode'/.test(source)],
 ]
 
 let failed = 0

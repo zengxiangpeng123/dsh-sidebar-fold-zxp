@@ -1,6 +1,6 @@
 {
   "name": "dsh-sidebar-fold-zxp",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "把 DSH 左侧那排插件入口折起来、按组归类、按你定的顺序排。Fold the sidebar plugin entries into collapsible groups you order yourself.",
   "type": "module",
   "main": "./index.js",

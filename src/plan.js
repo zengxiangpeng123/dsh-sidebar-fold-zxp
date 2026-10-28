@@ -26,7 +26,7 @@ const GROUP_STEP = 1000
  * @param {string[]} input.entryIds Every panel entry that exists right now.
  * @returns {{
  *   groups: Array<{ id: string, name: string, order: number, collapsed: boolean, count: number }>,
- *   rows: Array<{ id: string, order: number, groupId: string, hidden: boolean }>,
+ *   rows: Array<{ id: string, order: number, groupId: string, hidden: boolean, pinned: boolean, userHidden: boolean }>,
  *   missing: string[],
  * }}
  */
@@ -82,7 +82,19 @@ export function planLayout({ settings, entryIds }) {
     return a < b ? -1 : a > b ? 1 : 0
   }
 
-  const headers = []
+  // The two user choices, as sets. `hidden` already means "this row's group is
+
+    // collapsed", so the per-entry switch needs its own name — reusing it would
+
+    // make a folded group and a deliberately hidden entry indistinguishable.
+
+    const pinnedSet = new Set(Array.isArray(settings?.pinned) ? settings.pinned : [])
+
+    const userHiddenSet = new Set(Array.isArray(settings?.hidden) ? settings.hidden : [])
+
+  
+
+    const headers = []
   const rows = []
   let index = 0
   for (const group of groups) {
@@ -95,6 +107,7 @@ export function planLayout({ settings, entryIds }) {
       order: index * GROUP_STEP - HEADER_OFFSET,
       collapsed: group.collapsed,
       count: group.members.length,
+            allHidden: group.members.every(memberId => userHiddenSet.has(memberId)),
       implicit,
     })
     group.members.forEach((id, position) => {
@@ -106,6 +119,8 @@ export function planLayout({ settings, entryIds }) {
         // without comparing against a sentinel id it would have to hard-code.
         ungrouped: implicit,
         hidden: group.collapsed,
+                pinned: pinnedSet.has(id),
+                userHidden: userHiddenSet.has(id),
       })
     })
     index += 1
@@ -120,3 +135,4 @@ export function planLayout({ settings, entryIds }) {
 
   return { groups: headers, rows, missing }
 }
+

@@ -94,3 +94,30 @@ test('没有条目时不产生任何组', () => {
   assert.deepEqual(plan.groups, [])
   assert.deepEqual(plan.rows, [])
 })
+
+// ── 选择性折叠：行上带标志，整组隐藏时标出来 ──────────────────────────────
+
+test('行带上 pinned / hidden 标志', () => {
+  const plan = planLayout({
+    settings: settings({ pinned: ['alpha'], hidden: ['beta'] }),
+    entryIds: ['alpha', 'beta', 'gamma'],
+  })
+  const byId = new Map(plan.rows.map(row => [row.id, row]))
+  assert.equal(byId.get('alpha').pinned, true)
+  assert.equal(byId.get('alpha').userHidden, false)
+  assert.equal(byId.get('beta').userHidden, true)
+  assert.equal(byId.get('beta').pinned, false)
+  assert.equal(byId.get('gamma').pinned, false)
+  assert.equal(byId.get('gamma').userHidden, false)
+})
+
+test('整组条目都被隐藏时，组上标 allHidden', () => {
+  const plan = planLayout({
+    settings: settings({ groups: [{ id: 'dev', name: '开发', collapsed: false }], assignments: { board: 'dev' }, hidden: ['board'] }),
+    entryIds: ['board', 'market'],
+  })
+  assert.equal(plan.groups.find(group => group.id === 'dev').allHidden, true)
+  assert.equal(plan.groups.find(group => group.implicit).allHidden, false)
+})
+
+

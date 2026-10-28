@@ -11,8 +11,50 @@ window.__ModuleLoader__.load({
       // Not "插件": the sidebar already has a shipped row with exactly that
       // name, and two rows called the same thing next to each other read as a
       // bug. This row lists the entries, so it is named for what it holds.
-      zh: { row: '插件列表', hint: '展开 / 收起插件入口', ungrouped: '未分组', empty: '还没有分组' },
-      en: { row: 'Plugin list', hint: 'Fold or unfold the plugin entries', ungrouped: 'Ungrouped', empty: 'No groups yet' },
+      zh: {
+        row: '插件列表',
+        hint: '展开 / 收起插件入口',
+        ungrouped: '未分组',
+        empty: '还没有分组',
+        'set.page': '插件列表',
+        'set.intro': '左边的插件入口按这里的顺序与分组显示；把鼠标移到行上可以收起整组。',
+        'set.loading': '读取配置…',
+        'set.groups': '分组',
+        'set.entries': '条目',
+        'set.entriesHint': '自上而下就是侧栏里的显示顺序；箭头只在同一组内移动。',
+        'set.name': '新分组名称',
+        'set.add': '新建分组',
+        'set.collapsed': '默认折叠',
+        'set.up': '上移',
+        'set.down': '下移',
+        'set.remove': '删除',
+        'set.missing': '配置里有、但已经不在的条目',
+        'set.prune': '清理',
+        'set.saveFailed': '保存失败，这次改动没有生效',
+        'set.noEntries': '还没有任何插件入口',
+      },
+      en: {
+        row: 'Plugin list',
+        hint: 'Fold or unfold the plugin entries',
+        ungrouped: 'Ungrouped',
+        empty: 'No groups yet',
+        'set.page': 'Plugin list',
+        'set.intro': 'The sidebar shows these entries in this order and these groups.',
+        'set.loading': 'Reading settings…',
+        'set.groups': 'Groups',
+        'set.entries': 'Entries',
+        'set.entriesHint': 'Top to bottom is the sidebar order; the arrows move an entry inside its own group.',
+        'set.name': 'New group name',
+        'set.add': 'Add group',
+        'set.collapsed': 'Collapsed',
+        'set.up': 'Move up',
+        'set.down': 'Move down',
+        'set.remove': 'Remove',
+        'set.missing': 'Configured but no longer present',
+        'set.prune': 'Clean up',
+        'set.saveFailed': 'Save failed; that change did not take effect',
+        'set.noEntries': 'No plugin entries yet',
+      },
     }
 
     /**
@@ -230,7 +272,8 @@ window.__ModuleLoader__.load({
           const entries = ctx.slots.entriesOfSlot('sidebar.panellist');
           return entries
             .map(entry => entry?.options?.id)
-            .filter(id => typeof id === 'string' && id !== '');
+            // Our own row is not configurable: it is the control, not an entry.
+            .filter(id => typeof id === 'string' && id !== '' && id !== 'sidebar-fold');
         } catch {
           return [];
         }
@@ -359,6 +402,169 @@ window.__ModuleLoader__.load({
       }, React.createElement(Chevron, { folded }));
     }
 
+    /** Panel entries as { id → display label }, excluding this plugin's own row. */
+    function entryLabels(ctx) {
+      const map = new Map();
+      try {
+        const entries = ctx.slots.entriesOfSlot('sidebar.panellist');
+        for (const entry of entries) {
+          const options = entry?.options ?? {};
+          const id = options.id;
+          if (typeof id !== 'string' || id === '' || id === 'sidebar-fold') continue;
+          let label = options.label;
+          if (typeof label === 'function') {
+            try { label = label(); } catch { label = id; }
+          }
+          map.set(id, typeof label === 'string' && label !== '' ? label : id);
+        }
+      } catch { /* no registry: the page renders empty rather than failing */ }
+      return map;
+    }
+
+    /**
+     * The settings page.
+     *
+     * It is a form and nothing more: every button posts one operation to the
+     * host and renders whatever comes back. The rules for what an operation
+     * means live in src/edits.js, where they are tested — this file cannot be.
+     */
+    function SettingsPage({ ctx, t }) {
+      const [settings, setSettings] = React.useState(null);
+      const [plan, setPlan] = React.useState(null);
+      const [labels, setLabels] = React.useState(() => entryLabels(ctx));
+      const [error, setError] = React.useState('');
+      const [name, setName] = React.useState('');
+
+      React.useEffect(() => {
+        let alive = true;
+        void (async () => {
+          const found = entryLabels(ctx);
+          const ids = [...found.keys()];
+          const loaded = await loadSettings();
+          const layout = await loadPlan(ids);
+          if (!alive) return;
+          setLabels(found);
+          setSettings(loaded);
+          setPlan(layout);
+        })();
+        return () => { alive = false; };
+      }, [ctx]);
+
+      const ids = React.useMemo(() => [...labels.keys()], [labels]);
+
+      const send = React.useCallback(async op => {
+        const body = await request('/edit', { method: 'POST', body: JSON.stringify({ entryIds: ids, op }) });
+        if (body === null || !body.settings) {
+          setError(t('set.saveFailed'));
+          return;
+        }
+        setError('');
+        setSettings(body.settings);
+        if (body.plan) setPlan(body.plan);
+      }, [ids, t]);
+
+      if (settings === null) {
+        return React.createElement('div', { className: 'dsh-fold-set' },
+          React.createElement('div', { className: 'dsh-fold-set-hint' }, t('set.loading')));
+      }
+
+      const groups = Array.isArray(settings.groups) ? settings.groups : [];
+      const rows = plan !== null && Array.isArray(plan.rows) ? plan.rows : [];
+      const missing = plan !== null && Array.isArray(plan.missing) ? plan.missing : [];
+
+      const groupRow = group => React.createElement('div', { className: 'dsh-fold-set-row', key: group.id },
+        React.createElement('input', {
+          className: 'dsh-fold-set-input',
+          defaultValue: group.name,
+          onBlur: event => {
+            const value = event.target.value.trim();
+            if (value !== '' && value !== group.name) void send({ op: 'group.rename', id: group.id, name: value });
+          },
+        }),
+        React.createElement('label', { className: 'dsh-fold-set-check' },
+          React.createElement('input', {
+            type: 'checkbox',
+            checked: group.collapsed === true,
+            onChange: event => { void send({ op: 'group.collapse', id: group.id, collapsed: event.target.checked }); },
+          }),
+          t('set.collapsed')),
+        React.createElement('button', {
+          type: 'button', className: 'dsh-fold-set-button', title: t('set.up'),
+          onClick: () => { void send({ op: 'group.move', id: group.id, delta: -1 }); },
+        }, '↑'),
+        React.createElement('button', {
+          type: 'button', className: 'dsh-fold-set-button', title: t('set.down'),
+          onClick: () => { void send({ op: 'group.move', id: group.id, delta: 1 }); },
+        }, '↓'),
+        React.createElement('button', {
+          type: 'button', className: 'dsh-fold-set-button', title: t('set.remove'),
+          onClick: () => { void send({ op: 'group.remove', id: group.id }); },
+        }, '✕'));
+
+      const entryRow = row => React.createElement('div', { className: 'dsh-fold-set-row', key: row.id },
+        React.createElement('span', { className: 'dsh-fold-set-label', title: row.id }, labels.get(row.id) ?? row.id),
+        React.createElement('select', {
+          className: 'dsh-fold-set-select',
+          value: row.groupId === '__ungrouped__' ? '' : row.groupId,
+          onChange: event => {
+            void send({ op: 'entry.assign', entryId: row.id, groupId: event.target.value });
+          },
+        },
+        React.createElement('option', { value: '' }, t('ungrouped')),
+        groups.map(group => React.createElement('option', { key: group.id, value: group.id }, group.name))),
+        React.createElement('button', {
+          type: 'button', className: 'dsh-fold-set-button', title: t('set.up'),
+          onClick: () => { void send({ op: 'entry.move', entryId: row.id, delta: -1 }); },
+        }, '↑'),
+        React.createElement('button', {
+          type: 'button', className: 'dsh-fold-set-button', title: t('set.down'),
+          onClick: () => { void send({ op: 'entry.move', entryId: row.id, delta: 1 }); },
+        }, '↓'));
+
+      return React.createElement('div', { className: 'dsh-fold-set' },
+        error === '' ? null : React.createElement('div', { className: 'dsh-fold-set-error' }, error),
+        React.createElement('div', { className: 'dsh-fold-set-hint' }, t('set.intro')),
+
+        React.createElement('div', { className: 'dsh-fold-set-legend' }, t('set.groups')),
+        groups.length === 0
+          ? React.createElement('div', { className: 'dsh-fold-set-hint' }, t('empty'))
+          : groups.map(groupRow),
+        React.createElement('div', { className: 'dsh-fold-set-row' },
+          React.createElement('input', {
+            className: 'dsh-fold-set-input',
+            placeholder: t('set.name'),
+            value: name,
+            onChange: event => setName(event.target.value),
+            onKeyDown: event => {
+              if (event.key !== 'Enter' || name.trim() === '') return;
+              void send({ op: 'group.add', name: name.trim() });
+              setName('');
+            },
+          }),
+          React.createElement('button', {
+            type: 'button', className: 'dsh-fold-set-button',
+            onClick: () => {
+              if (name.trim() === '') return;
+              void send({ op: 'group.add', name: name.trim() });
+              setName('');
+            },
+          }, t('set.add'))),
+
+        React.createElement('div', { className: 'dsh-fold-set-legend' }, t('set.entries')),
+        React.createElement('div', { className: 'dsh-fold-set-hint' }, t('set.entriesHint')),
+        rows.length === 0
+          ? React.createElement('div', { className: 'dsh-fold-set-hint' }, t('set.noEntries'))
+          : rows.map(entryRow),
+
+        missing.length === 0 ? null : React.createElement('div', { className: 'dsh-fold-set-legend' }, t('set.missing')),
+        missing.length === 0 ? null : React.createElement('div', { className: 'dsh-fold-set-row' },
+          React.createElement('span', { className: 'dsh-fold-set-label' }, missing.join('、')),
+          React.createElement('button', {
+            type: 'button', className: 'dsh-fold-set-button',
+            onClick: () => { void send({ op: 'prune' }); },
+          }, t('set.prune'))));
+    }
+
     function injectStyles() {
       if (document.getElementById(STYLE_ID) !== null) return () => {};
       const style = document.createElement('style');
@@ -389,6 +595,45 @@ window.__ModuleLoader__.load({
         .dsh-fold-header-chevron { font-size: 9px; width: 8px; }
         .dsh-fold-header-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .dsh-fold-header-count { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
+
+        /* ── settings page ───────────────────────────────────────────────── */
+        .dsh-fold-set { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+        .dsh-fold-set-legend {
+          margin-top: 12px; font-size: 11px; font-weight: 600;
+          opacity: .55; letter-spacing: .02em;
+        }
+        .dsh-fold-set-hint { font-size: 10.5px; opacity: .45; line-height: 1.5; }
+        .dsh-fold-set-error { font-size: 11px; color: #D92D33; }
+        .dsh-fold-set-row {
+          display: flex; align-items: center; gap: 6px;
+          padding: 3px 0;
+        }
+        .dsh-fold-set-input, .dsh-fold-set-select {
+          font: inherit; font-size: 11.5px;
+          padding: 3px 6px; box-sizing: border-box;
+          border: 1px solid var(--dsw-alias-border-l2, rgba(128, 132, 140, .32));
+          border-radius: 6px;
+          background: var(--dsw-alias-bg-layer-1, Canvas);
+          color: inherit;
+        }
+        .dsh-fold-set-input { flex: 1 1 auto; min-width: 0; }
+        .dsh-fold-set-select { flex: 0 0 auto; max-width: 40%; }
+        .dsh-fold-set-label {
+          flex: 1 1 auto; min-width: 0;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .dsh-fold-set-check {
+          display: inline-flex; align-items: center; gap: 4px;
+          font-size: 10.5px; opacity: .7; white-space: nowrap;
+        }
+        .dsh-fold-set-button {
+          font: inherit; font-size: 11px;
+          padding: 2px 7px; border-radius: 6px; cursor: pointer;
+          border: 1px solid var(--dsw-alias-border-l2, rgba(128, 132, 140, .32));
+          background: transparent; color: inherit; opacity: .75;
+          white-space: nowrap;
+        }
+        .dsh-fold-set-button:hover { opacity: 1; }
       `;
       document.head.appendChild(style);
       return () => { style.remove(); };
@@ -411,6 +656,13 @@ window.__ModuleLoader__.load({
           order: -1000,
           label: () => t('row'),
         }, props => React.createElement(FoldRow, { ...props, t, ctx })));
+
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'sidebar-fold-settings',
+          order: 37,
+          label: () => t('set.page'),
+        }, props => React.createElement(SettingsPage, { ...props, ctx, t })));
 
         return removeStyles;
       },

@@ -10,6 +10,7 @@ import path from 'node:path'
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, settingsFile } from './src/settings.js'
 import { parseJsonObject } from './src/body.js'
 import { planLayout } from './src/plan.js'
+import { applyEdit } from './src/edits.js'
 
 const BASE = '/api/dsh-sidebar-fold-zxp'
 
@@ -84,6 +85,29 @@ export function apply(ctx) {
         }
         const entryIds = Array.isArray(parsed.value.entryIds) ? parsed.value.entryIds : []
         json(res, 200, planLayout({ settings, entryIds }))
+        return
+      }
+      if (route === '/edit') {
+        // One operation per request, applied by a pure function in src/edits.js.
+        // The browser posts what the user clicked; it never computes the result.
+        if (req.method !== 'POST') {
+          json(res, 405, { error: 'method not allowed', allow: ['POST'] })
+          return
+        }
+        const parsed = parseJsonObject(await readBody(req))
+        if (!parsed.ok) {
+          json(res, 400, { error: parsed.error })
+          return
+        }
+        const entryIds = Array.isArray(parsed.value.entryIds) ? parsed.value.entryIds : []
+        const result = applyEdit({ settings, entryIds, op: parsed.value.op })
+        if (result.ok !== true) {
+          json(res, 400, { error: result.error })
+          return
+        }
+        settings = await saveSettings(file, result.settings)
+        userSaved = true
+        json(res, 200, { settings, plan: planLayout({ settings, entryIds }) })
         return
       }
       json(res, 404, { error: 'not found' })

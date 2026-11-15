@@ -42,15 +42,36 @@ DSH 的 `sidebar.panellist` 是一个**列表槽**：每个带入口的插件注
 - `pinned`：折叠时**仍然显示**这一条（"只折叠一部分"靠它）
 - `hidden`：**始终不显示**这一条（持久，直到取消）
 
-同一个 key 同时出现在两个数组时，`hidden` 胜出。折叠判定因此是三选一：
+同一个 key 同时出现在两个数组时，`hidden` 胜出。折叠判定因此是三选一，写在 `rowShouldHide()` 里：
 
 ```js
-const hide = (entry.userHidden === true
-  || ((folded && entry.pinned !== true) || collapsedById.get(entry.groupId) === true))
-  && el !== kept
+function rowShouldHide({ folded, pinned, userHidden, groupCollapsed, isActive }) {
+  if (userHidden === true) return true   // 用户说不要，连「当前面板保留」也压过
+  if (isActive === true) return false
+  return (folded === true && pinned !== true) || groupCollapsed === true
+}
 ```
 
-两个标志都为 false 时化简结果与旧式相同。`rows[].hidden` 仍表示"所属组被折叠"，用户隐藏用 `rows[].userHidden`——两者含义不同，不能共用一个字段。某组的条目全部被隐藏时，该组的标题也不画。
+两个标志都为 false 时化简结果与旧式相同。`rows[].hidden` 仍表示“所属组被折叠”，用户隐藏用 `rows[].userHidden`——两者含义不同，不能共用一个字段。某组的条目全部被隐藏时，该组的标题也不画。
+
+判定只有这一处：`applyPlan` 调用它，`test/visibility.test.js` 直接测它。0.9.1 之前在 `applyPlan` 里另写了一份内联表达式，把 `isActive` 放到了 `userHidden` 前面——「始终隐藏」的条目只要正好是打开着的面板就会露出来，而设置页承诺的恰恰相反。0.9.2 起统一走 `rowShouldHide`。
+
+## 外壳换了包裹层（0.2.2，2026-11）
+
+DSH 0.2.1 的左栏是 `nav > button`，一行就是一个按钮。0.2.2 在两者之间插了一层
+`<div class="panelEntry">`——取消固定按钮和 tooltip 都挂在这一层上，另外多了一个
+`<div class="moreAnchor">` 包住的「更多」菜单。
+
+于是所有写成 `nav > button` 的地方一次全部匹配不到：条目列表为空 → 计划请求根本不发 →
+折叠、分组、排序一起安静失效，控制台里一个字都没有。这就是 0.9.1 在 0.2.2 上的表现。
+
+修法是不要再假设层级，而是**按定义找元素**：一个条目 = `<nav>` 的直接子元素里、能摸到
+一个 `<button>` 的那个；按钮负责标识（`aria-label` / `aria-current`），包裹层负责被移动
+和被隐藏（`order` / `display` / 缩进 / 引导线）。`panelEntries()` 与 `entryOf()` 就是这两句话，
+`test/dom.test.js` 用两种真实结构各跑一遍，谁再写死层级就会被测出来。
+
+「更多」也不再一律隐藏：0.2.2 的它是一个真菜单，里面装着用户取消固定的条目，藏掉等于让人
+拿不回自己的插件；只有老式的、点了没内容的溢出按钮才继续隐藏。
 
 ## 走过的两条死路（写给未来的自己）
 

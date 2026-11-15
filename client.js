@@ -209,16 +209,60 @@ window.__ModuleLoader__.load({
       return el.hasAttribute('data-fold-header') || el.hasAttribute('data-fold-row')
     }
 
-    /** Real panel rows, in the shell's own order, excluding our own. */
-    function panelRows(nav, selfRow) {
-      if (nav === null) return []
-      return [...nav.querySelectorAll(':scope > button')]
-        .filter(el => !isOurs(el) && el !== selfRow)
+    /**
+     * One list item, as the shell's markup defines it.
+     *
+     * DSH 0.2.1 put the panel row itself in the `<nav>`: `nav > button`. 0.2.2
+     * wraps that button in a `<div class="panelEntry">` — the unpin affordance
+     * and the tooltip hang off the wrapper — so `nav > button` now matches
+     * nothing at all. That is exactly how the fold died: no error, no rows, the
+     * plugin simply found nothing to fold. The element that has to move and hide
+     * is the wrapper; the element that names the entry is still the button.
+     */
+    function isButton(el) {
+      return el !== null && el !== undefined && el.tagName === 'BUTTON'
     }
 
-    function activeRow(nav) {
-      if (nav === null) return null
-      return nav.querySelector(':scope > button[aria-current="page"]')
+    /** The row's own button, however deeply the shell wrapped it. */
+    function buttonInside(el) {
+      if (el === null || el === undefined) return null
+      if (isButton(el)) return el
+      for (const child of el.children ?? []) {
+        const found = buttonInside(child)
+        if (found !== null) return found
+      }
+      return null
+    }
+
+    /** The `<nav>` child a node sits in, or null when it is not inside one. */
+    function entryOf(node, nav) {
+      let current = node
+      while (current !== null && current !== undefined) {
+        if (current.parentElement === nav) return current
+        current = current.parentElement
+      }
+      return null
+    }
+
+    /** Real panel items, in the shell's own order, excluding our own row. */
+    function panelEntries(nav, selfEntry) {
+      if (nav === null) return []
+      const out = []
+      for (const child of nav.children ?? []) {
+        if (isOurs(child) || child === selfEntry) continue
+        const control = buttonInside(child)
+        if (control === null) continue
+        out.push({ entry: child, control })
+      }
+      return out
+    }
+
+    /** The item holding the open panel: that row stays visible when folded. */
+    function activeEntry(nav) {
+      for (const item of panelEntries(nav, null)) {
+        if (item.control.getAttribute('aria-current') === 'page') return item.entry
+      }
+      return null
     }
 
     /**
@@ -233,18 +277,20 @@ window.__ModuleLoader__.load({
      * Labels repeat only if two plugins pick the same name; the second gets a
      * `#2` suffix so the configuration can still tell them apart.
      */
-    function collectRows(nav, selfRow) {
-      const rows = panelRows(nav, selfRow)
+    function collectRows(nav, selfEntry) {
+      const entries = panelEntries(nav, selfEntry)
       const seen = new Map()
       const byKey = new Map()
-      for (const [index, row] of rows.entries()) {
-        const raw = (row.getAttribute('aria-label') ?? row.textContent ?? '').trim().replace(/\s+/g, ' ')
+      for (const [index, item] of entries.entries()) {
+        const raw = (item.control.getAttribute('aria-label') ?? item.entry.textContent ?? '').trim().replace(/\s+/g, ' ')
         const base = raw === '' ? `row-${index + 1}` : raw
         const count = seen.get(base) ?? 0
         seen.set(base, count + 1)
-        byKey.set(count === 0 ? base : `${base}#${count + 1}`, row)
+        // The wrapper, not the button: it is what the shell lays out, so it is
+        // what `order` and `display` have to be written on.
+        byKey.set(count === 0 ? base : `${base}#${count + 1}`, item.entry)
       }
-      return { rows, byKey }
+      return { entries, byKey }
     }
 
     // ── what the sidebar saw, shared with the settings page ──────────────────
@@ -342,13 +388,19 @@ window.__ModuleLoader__.load({
      * only walked `nav > button` — never saw it and it kept sitting at order 0, in
      * the middle of the first group.
      */
-    function settleUnmanaged(nav, managed, selfRow) {
+    function settleUnmanaged(nav, managed, selfEntry) {
       for (const child of [...nav.children]) {
         if (child.hasAttribute('data-fold-header')) continue
-        if (child === selfRow || managed.has(child)) continue
+        if (child === selfEntry || managed.has(child)) continue
         if (isOurs(child)) continue
-        const label = (child.getAttribute?.('aria-label') ?? child.textContent ?? '').trim().replace(/\s+/g, ' ')
-        if (HIDE_LABELS.includes(label)) {
+        const control = buttonInside(child)
+        const label = (control?.getAttribute('aria-label') ?? child.getAttribute?.('aria-label') ?? child.textContent ?? '')
+          .trim().replace(/\s+/g, ' ')
+        // The shell's own overflow launcher. Since 0.2.2 it is a real menu that
+        // holds the entries the user unpinned, so hiding it would take those away;
+        // an older plain "More" row has nothing behind it and still goes.
+        const isMenu = control !== null && control.getAttribute('aria-haspopup') === 'menu'
+        if (HIDE_LABELS.includes(label) && !isMenu) {
           if (child.style.display !== 'none') child.style.display = 'none'
           child.setAttribute('aria-hidden', 'true')
           continue
@@ -399,14 +451,16 @@ window.__ModuleLoader__.load({
     
     
     
-    function applyPlan(nav, selfRow, folded, plan, byKey, onHeaderClick, overrides) {
+    function applyPlan(nav, selfEntry, folded, plan, byKey, onHeaderClick, overrides) {
       if (nav === null) return
 
       nav.style.display = 'flex'
       nav.style.flexDirection = 'column'
 
-      for (const el of nav.querySelectorAll(':scope > [data-fold-header]')) el.remove()
-      if (selfRow !== null) selfRow.style.order = '-99999'
+      for (const child of [...(nav.children ?? [])]) {
+        if (child.hasAttribute('data-fold-header')) child.remove()
+      }
+      if (selfEntry !== null) selfEntry.style.order = '-99999'
 
       const collapsedById = new Map()
 
@@ -424,7 +478,7 @@ window.__ModuleLoader__.load({
 
             const managed = new Set()
       if (plan !== null) {
-        const kept = activeRow(nav)
+        const kept = activeEntry(nav)
         for (const entry of plan.rows) {
           const el = byKey.get(entry.id)
           if (el === undefined) continue
@@ -435,14 +489,17 @@ window.__ModuleLoader__.load({
           // "not in any group" still looks like the default state.
           setGrouped(el, entry.ungrouped === true)
           // The panel the user is looking at stays visible even inside a collapsed
-          // group, or they lose track of where they are.
-          // Three independent reasons to hide one row: the user hid it, the whole block
-  // is folded and this row did not opt out, or its group is collapsed. With
-  // nothing pinned and nothing hidden this reduces to the original expression.
-  const hide = (
-    entry.userHidden === true
-    || ((folded && entry.pinned !== true) || collapsedById.get(entry.groupId) === true)
-  ) && el !== kept
+          // group, or they lose track of where they are. The precedence between the
+          // three reasons to hide a row lives in `rowShouldHide` — deciding it again
+          // here is how "an entry the user switched off" used to lose to "the open
+          // panel stays", which is the one outcome the setting promises never happens.
+          const hide = rowShouldHide({
+            folded,
+            pinned: entry.pinned,
+            userHidden: entry.userHidden,
+            groupCollapsed: collapsedById.get(entry.groupId) === true,
+            isActive: el === kept,
+          })
           setShown(el, !hide)
         }
         // Folded means the whole area is closed: the headers go with it, exactly
@@ -471,7 +528,7 @@ window.__ModuleLoader__.load({
         el.style.boxShadow = ''
         setShown(el, true)
       }
-      settleUnmanaged(nav, managed, selfRow)
+      settleUnmanaged(nav, managed, selfEntry)
 
       // Nothing configured yet: fall back to the plain fold, so the plugin still
       // does its original job on a fresh install or when the host is unreachable.
@@ -479,7 +536,7 @@ window.__ModuleLoader__.load({
   // folded *with* a plan used to be harmless because it recomputed the same
   // answer; now it would overwrite the first loop and re-hide every pinned row.
   if (plan === null) {
-        const kept = activeRow(nav)
+        const kept = activeEntry(nav)
         for (const [, el] of byKey) {
           if (plan !== null && !managed.has(el)) continue
           if (plan === null) el.style.marginInlineStart = ''
@@ -566,9 +623,9 @@ window.__ModuleLoader__.load({
       const refresh = React.useCallback(async () => {
         if (busyRef.current) return
         const nav = navOf(nodeRef.current)
-        const selfRow = rowOf(nodeRef.current)
+        const selfEntry = entryOf(rowOf(nodeRef.current), nav)
         if (nav === null) return
-        const { byKey } = collectRows(nav, selfRow)
+        const { byKey } = collectRows(nav, selfEntry)
         const keys = [...byKey.keys()]
         if (keys.length === 0) return
         busyRef.current = true
@@ -600,8 +657,8 @@ window.__ModuleLoader__.load({
         // silently discarded anything the settings page had changed since.
         void (async () => {
           const nav = navOf(nodeRef.current)
-          const selfRow = rowOf(nodeRef.current)
-          const keys = nav === null ? [] : collectRows(nav, selfRow).map(entry => entry.key)
+          const selfEntry = entryOf(rowOf(nodeRef.current), nav)
+          const keys = nav === null ? [] : [...collectRows(nav, selfEntry).byKey.keys()]
           const body = await request('/edit', {
             method: 'POST',
             body: JSON.stringify({ entryIds: keys, op: { op: 'group.collapse', id: group.id, collapsed: !was } }),
@@ -618,6 +675,11 @@ window.__ModuleLoader__.load({
         const row = rowOf(nodeRef.current)
         if (row === null) return undefined
         row.setAttribute('data-fold-row', '')
+        // The wrapper is what the layout walks, so it has to be recognisable as
+        // ours too — otherwise the shell's own 0.2.2 wrapper reads as an entry
+        // nobody configured.
+        const wrapper = entryOf(row, navOf(row))
+        if (wrapper !== null && wrapper !== row) wrapper.setAttribute('data-fold-row', '')
         const onClick = event => {
           event.preventDefault()
           event.stopPropagation()
@@ -634,13 +696,13 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         const node = nodeRef.current
         const nav = navOf(node)
-        const selfRow = rowOf(node)
+        const selfEntry = entryOf(rowOf(node), nav)
         if (nav === null) return undefined
 
-        const { byKey } = collectRows(nav, selfRow)
+        const { byKey } = collectRows(nav, selfEntry)
         const keys = [...byKey.keys()]
         setObserved(keys)
-        applyPlan(nav, selfRow, folded, planRef.current, byKey, group => { toggleGroup(group) }, collapsedRef.current)
+        applyPlan(nav, selfEntry, folded, planRef.current, byKey, group => { toggleGroup(group) }, collapsedRef.current)
 
         // A plan computed for a different set of rows is stale — entries were
         // installed, removed or renamed. Ask again rather than paint the wrong
@@ -678,33 +740,34 @@ window.__ModuleLoader__.load({
         const node = nodeRef.current
         const nav = navOf(node)
         const self = rowOf(node)
+        const selfEntry = entryOf(self, nav)
         if (nav !== null) {
-          for (const el of nav.querySelectorAll(':scope > [data-fold-header]')) el.remove()
-          for (const el of nav.querySelectorAll(':scope > button')) {
-            if (isOurs(el)) continue
-            setShown(el, true)
-            el.style.order = ''
-            el.style.marginInlineStart = ''
-            el.style.boxShadow = ''          }
+          for (const child of [...nav.children]) {
+            if (child.hasAttribute('data-fold-header')) {
+              child.remove()
+              continue
+            }
+            if (isOurs(child)) continue
+            // Both shapes: on 0.2.1 the item is the button, on 0.2.2 it is the
+            // wrapper around it. Anything a previous plan touched is put back.
+            setShown(child, true)
+            child.style.order = ''
+            child.style.marginInlineStart = ''
+            child.style.boxShadow = ''
+            if (child.getAttribute('aria-hidden') === 'true') child.removeAttribute('aria-hidden')
+          }
           nav.style.display = ''
           nav.style.flexDirection = ''
+        }
+        if (selfEntry !== null) {
+          selfEntry.style.order = ''
+          selfEntry.removeAttribute('data-fold-row')
         }
         if (self !== null) {
           self.style.order = ''
           self.removeAttribute('data-fold-row')
         }
-        // Give the overflow entry back when this plugin goes away.
-                const again = navOf(node)
-                if (again !== null) {
-                  for (const child of again.children) {
-                    if (child.getAttribute('aria-hidden') === 'true' && HIDE_LABELS.includes((child.textContent ?? '').trim())) {
-                      child.style.display = ''
-                      child.removeAttribute('aria-hidden')
-                    }
-                    if (child.style.order === '999999') child.style.order = ''
-                  }
-                }
-                setObserved([])
+        setObserved([])
       }, [])
 
       return React.createElement('span', {
@@ -1086,13 +1149,19 @@ React.createElement('select', {
 
     return {
 
-          // Exposed for `test/visibility.test.js`: the browser ignores extra keys, and
+          // Exposed for `test/visibility.test.js` and `test/dom.test.js`: the
 
-          // the alternative is a predicate no test can reach.
+          // browser ignores extra keys, and the alternative is behaviour no test
+
+          // can reach.
 
           rowShouldHide,
 
           headerShouldRender,
+
+          collectRows,
+
+          applyPlan,
 
           inject: ['slots'],
       apply(ctx) {
